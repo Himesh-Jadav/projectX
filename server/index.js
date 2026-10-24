@@ -1,0 +1,56 @@
+import express from 'express';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { config } from './config.js';
+import { connect } from './db.js';
+import chatRouter from './routes/chat.js';
+import memoriesRouter from './routes/memories.js';
+import sessionRouter from './routes/session.js';
+
+const app = express();
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const webDist = resolve(currentDir, '../web/dist');
+
+app.use(express.json({ limit: '1mb' }));
+app.use('/api/chat', chatRouter);
+app.use('/api/memories', memoriesRouter);
+app.use('/api/session', sessionRouter);
+
+app.get('/api/health', async (_req, res) => {
+  try {
+    const database = await connect();
+    await database.command({ ping: 1 });
+    res.json({
+      status: 'ok', database: 'connected',
+      providers: {
+        groq: config.groqApiKeys.length > 0,
+        gemini: config.geminiApiKeys.length > 0,
+        openrouter: config.openrouterApiKeys.length > 0
+      }
+    });
+  } catch (error) {
+    res.status(503).json({ status: 'error', database: 'unavailable', error: error.message });
+  }
+});
+
+if (existsSync(webDist)) app.use(express.static(webDist));
+
+app.use((error, _req, res, _next) => {
+  console.error(`Request failed: ${error.message}`);
+  const databaseUnavailable = [
+    'MongoServerSelectionError',
+    'MongoNetworkError',
+    'MongoNetworkTimeoutError',
+    'MongoTopologyClosedError'
+  ].includes(error?.name) || /ECONNRESET|SSL routines|TLS alert/i.test(error?.message ?? '');
+  if (databaseUnavailable) {
+    return res.status(503).json({
+      error: 'MongoDB Atlas is unreachable. Check that the cluster is running, this network can reach Atlas over TLS, and your current IP is on the Atlas IP Access List.'
+    });
+  }
+  res.status(500).json({ error: 'The request could not be completed.' });
+});
+
+const port = Number(process.env.PORT || 3001);
+app.listen(port, () => console.log(`Hindsight API listening on http://localhost:${port}`));

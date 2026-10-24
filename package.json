@@ -1,0 +1,21 @@
+{
+  "name": "hindsight",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "setup": "node server/scripts/setup.js",
+    "seed": "node server/scripts/seed.js",
+    "smoke": "node server/scripts/smoke.js",
+    "demo:reset": "node server/scripts/reset.js",
+    "dev": "node --watch server/index.js",
+    "dev:web": "npm --prefix web run dev",
+    "build:web": "npm --prefix web run build"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongodb": "^6.12.0"
+  }
+}
