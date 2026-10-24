@@ -34,6 +34,24 @@ function renderInline(text, prefix) {
   });
 }
 
+function tableCells(line) {
+  const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+  while (cells.length && !cells[0]) cells.shift();
+  while (cells.length && !cells[cells.length - 1]) cells.pop();
+  return cells;
+}
+
+function isTableDivider(line) {
+  const cells = tableCells(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function renderTableCell(text, prefix) {
+  return text.split(/<br\s*\/?\s*>/i).flatMap((part, index) => index
+    ? [<br key={`${prefix}-br-${index}`} />, ...renderInline(part, `${prefix}-${index}`)]
+    : renderInline(part, `${prefix}-${index}`));
+}
+
 function AssistantText({ text }) {
   const lines = responseText(text).replace(/\r\n?/g, '\n').split('\n');
   const blocks = [];
@@ -51,7 +69,8 @@ function AssistantText({ text }) {
     listType = '';
   };
 
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
     if (line.trim().startsWith('```')) {
       flushParagraph();
       flushList();
@@ -63,6 +82,21 @@ function AssistantText({ text }) {
     }
     if (codeLines) { codeLines.push(line); continue; }
     if (!line.trim()) { flushParagraph(); flushList(); continue; }
+
+    if (line.includes('|') && lines[lineIndex + 1]?.includes('|') && isTableDivider(lines[lineIndex + 1])) {
+      flushParagraph();
+      flushList();
+      const headers = tableCells(line);
+      const rows = [];
+      lineIndex += 2;
+      while (lineIndex < lines.length && lines[lineIndex].includes('|') && lines[lineIndex].trim()) {
+        rows.push(tableCells(lines[lineIndex]));
+        lineIndex += 1;
+      }
+      lineIndex -= 1;
+      blocks.push({ type: 'table', headers, rows });
+      continue;
+    }
 
     const heading = line.match(/^\s{0,3}(#{1,3})\s+(.+)$/);
     if (heading) {
@@ -94,6 +128,7 @@ function AssistantText({ text }) {
         return <Tag key={`list-${index}`}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, `list-${index}-${itemIndex}`)}</li>)}</Tag>;
       }
       if (block.type === 'code') return <pre key={`code-${index}`}><code>{block.text}</code></pre>;
+      if (block.type === 'table') return <div className="assistant-table-wrap" key={`table-${index}`}><table className="assistant-table"><thead><tr>{block.headers.map((cell, cellIndex) => <th key={cellIndex}>{renderTableCell(cell, `table-${index}-head-${cellIndex}`)}</th>)}</tr></thead><tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex}>{block.headers.map((_, cellIndex) => <td key={cellIndex}>{renderTableCell(row[cellIndex] || '', `table-${index}-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody></table></div>;
       if (block.type.startsWith('heading')) {
         const Tag = block.type === 'heading1' ? 'h2' : 'h3';
         return <Tag key={`heading-${index}`}>{renderInline(block.text, `heading-${index}`)}</Tag>;
@@ -197,7 +232,7 @@ function App() {
   const [selectedId, setSelectedId] = useState('');
   const [timeline, setTimeline] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 801px)').matches);
   const inputRef = useRef(null);
   const feedRef = useRef(null);
   const toastTimer = useRef(null);
@@ -329,11 +364,12 @@ function App() {
     <div className="checkin-actions"><button className="button button-quiet button-small" onClick={() => mutateMemory(item.memory, 'invalidate')}>No longer true</button><button className="icon-button" aria-label="Confirm memory" title="Confirm" onClick={() => mutateMemory(item.memory, 'confirm')}><Icon name="check" /></button></div>
   </div>;
 
-  return <div className="app-shell">
+  return <div className={`app-shell moon-chat-shell is-new-session ${messages.length ? 'has-conversation' : ''}`}>
     <header className="topbar">
       <a className="brand" href="#" aria-label="Hindsight home"><span className="brand-mark"><Icon name="spark" size={18} /></span><span>hindsight</span></a>
       <div className="project-indicator"><span className="project-avatar">Q</span><div><small>YOUR PROJECT</small><strong>QuickBite</strong></div><span className="project-chevron">⌄</span></div>
       <div className="topbar-actions">
+        <button className="button button-memory" aria-pressed={mobilePanel} onClick={() => setMobilePanel((value) => !value)}><Icon name="book" size={15} /><span>Memory</span></button>
         <label className={`memory-toggle ${memoryEnabled ? 'enabled' : ''}`} title="Memory on or off"><span>Memory</span><input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} /><span className="toggle-track"><i /></span><b>{memoryEnabled ? 'On' : 'Off'}</b></label>
         <button className="button button-new" onClick={() => startSession(true)}><Icon name="plus" size={15} /><span>New session</span></button>
       </div>
@@ -345,7 +381,7 @@ function App() {
         {checkIns.length > 0 && <section className="checkins-section"><div className="section-kicker"><span className="pulse-dot" /> A few things to revisit <span className="checkin-count">{checkIns.length}</span></div>{checkIns.map(renderCheckIn)}</section>}
         {pageError && <div className="inline-error"><span>{pageError}</span><button className="text-button" onClick={() => startSession(false)}>Retry</button></div>}
         <div className={`chat-feed ${messages.length ? 'has-messages' : ''}`} ref={feedRef}>
-          {messages.length === 0 && <div className="welcome-block"><div className="welcome-symbol"><Icon name="spark" size={24} /></div><span className="eyebrow">A FRESH PERSPECTIVE, WITH CONTEXT</span><h2>Good ideas deserve<br />to be remembered.</h2><p>Share a decision, a constraint, or what you're figuring out. Hindsight will keep the important parts close.</p><div className="suggestion-row"><button onClick={() => setDraft("We're using MongoDB for orders because the menu shapes are flexible and we need to ship quickly.")}>Share a decision <Icon name="arrow" size={13} /></button><button onClick={() => setDraft("Most of our customers will be ordering from their phones.")}>Add an assumption <Icon name="arrow" size={13} /></button></div></div>}
+          {messages.length === 0 && <div className="welcome-block"><h2>Hindsight AI</h2><p>Build something meaningful — start with a thought, a decision, or a question.</p></div>}
           {messages.map((message) => <div className={`message-row ${message.role}`} key={message.localId}>
             {message.role === 'assistant' && <span className="assistant-avatar"><Icon name="spark" size={15} /></span>}
             <div className="message-content">
@@ -361,13 +397,25 @@ function App() {
           {busy && <div className="message-row assistant"><span className="assistant-avatar"><Icon name="spark" size={15} /></span><div className="thinking"><i /><i /><i /><span>Thinking with context</span></div></div>}
         </div>
         <form className="composer" onSubmit={sendMessage}>
-          <textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(event); } }} placeholder="Tell me what you're thinking..." rows={1} aria-label="Message Hindsight" />
+          <textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.target.style.height = '48px'; event.target.style.height = `${Math.min(event.target.scrollHeight, 150)}px`; }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(event); } }} placeholder="Type your request..." rows={1} aria-label="Message Hindsight" />
           <div className="composer-footer"><span><span className="composer-status" />{memoryEnabled ? 'Memory is on for this project' : 'Memory is off for this message'}</span><button className="send-button" disabled={!draft.trim() || busy} aria-label="Send message" type="submit"><Icon name="arrow" size={17} /></button></div>
         </form>
+        {messages.length === 0 && <div className="quick-actions" aria-label="Quick prompts">
+          {[
+            ['code', 'Generate Code', 'Help me implement a feature in this project.'],
+            ['spark', 'Launch App', 'Help me plan and launch this app.'],
+            ['book', 'UI Components', 'Help me design a useful UI component.'],
+            ['spark', 'Theme Ideas', 'Suggest a visual theme for this project.'],
+            ['book', 'User Dashboard', 'Help me plan a user dashboard.'],
+            ['spark', 'Landing Page', 'Help me create a landing page.'],
+            ['book', 'Upload Docs', 'I want to discuss a project document.'],
+            ['spark', 'Image Assets', 'Help me plan image assets for this project.']
+          ].map(([icon, label, prompt]) => <button key={label} type="button" onClick={() => { setDraft(prompt); inputRef.current?.focus(); }}><Icon name={icon} size={14} />{label}</button>)}
+        </div>}
         <p className="privacy-note"><Icon name="book" size={12} /> Your project context stays yours.</p>
       </section>
 
-      <aside className={`memory-panel ${mobilePanel ? 'mobile-visible' : ''}`} aria-label="Project memory">
+      <aside className={`memory-panel ${mobilePanel ? 'mobile-visible' : 'is-hidden'}`} aria-label="Project memory" aria-hidden={!mobilePanel}>
         <div className="panel-topline"><div><p className="eyebrow">PROJECT CONTEXT</p><h2>Memory</h2></div><div className="memory-count"><strong>{allMemories.length}</strong><span>memories</span></div><button className="panel-close mobile-panel-button" aria-label="Close memory panel" onClick={() => setMobilePanel(false)}><Icon name="close" /></button></div>
         <div className="panel-tabs" role="tablist" aria-label="Memory views">
           <button role="tab" aria-selected={tab === 'used'} className={tab === 'used' ? 'active' : ''} onClick={() => selectTab('used')}>Used in this reply</button>
