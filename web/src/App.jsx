@@ -8,6 +8,100 @@ const dateLabel = (value) => {
 };
 const idOf = (memory) => String(memory?._id ?? '');
 const typeLabel = (type) => ({ decision: 'Decision', assumption: 'Assumption', constraint: 'Constraint', outcome: 'Outcome' }[type] || type || 'Memory');
+const responseText = (value) => {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    for (const key of ['reply', 'text', 'content', 'message']) {
+      if (typeof value[key] === 'string') return value[key];
+    }
+    return JSON.stringify(value, null, 2);
+  }
+  return value == null ? '' : String(value);
+};
+
+function renderInline(text, prefix) {
+  const pieces = text.split(/(\*\*[^*]+?\*\*|__[^_]+?__|`[^`]+`|\*[^*\n]+?\*|_[^_\n]+?_)/g);
+  return pieces.map((piece, index) => {
+    const key = `${prefix}-${index}`;
+    if ((piece.startsWith('**') && piece.endsWith('**')) || (piece.startsWith('__') && piece.endsWith('__'))) {
+      return <strong key={key}>{piece.slice(2, -2)}</strong>;
+    }
+    if (piece.startsWith('`') && piece.endsWith('`')) return <code key={key}>{piece.slice(1, -1)}</code>;
+    if ((piece.startsWith('*') && piece.endsWith('*')) || (piece.startsWith('_') && piece.endsWith('_'))) {
+      return <em key={key}>{piece.slice(1, -1)}</em>;
+    }
+    return piece;
+  });
+}
+
+function AssistantText({ text }) {
+  const lines = responseText(text).replace(/\r\n?/g, '\n').split('\n');
+  const blocks = [];
+  let paragraph = [];
+  let listItems = [];
+  let listType = '';
+  let codeLines = null;
+  const flushParagraph = () => {
+    if (paragraph.length) blocks.push({ type: 'paragraph', text: paragraph.join(' ') });
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (listItems.length) blocks.push({ type: listType, items: listItems });
+    listItems = [];
+    listType = '';
+  };
+
+  for (const line of lines) {
+    if (line.trim().startsWith('```')) {
+      flushParagraph();
+      flushList();
+      if (codeLines) {
+        blocks.push({ type: 'code', text: codeLines.join('\n') });
+        codeLines = null;
+      } else codeLines = [];
+      continue;
+    }
+    if (codeLines) { codeLines.push(line); continue; }
+    if (!line.trim()) { flushParagraph(); flushList(); continue; }
+
+    const heading = line.match(/^\s{0,3}(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph(); flushList();
+      blocks.push({ type: `heading${heading[1].length}`, text: heading[2] });
+      continue;
+    }
+    const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      flushParagraph();
+      const nextType = ordered ? 'ordered' : 'unordered';
+      if (listType && listType !== nextType) flushList();
+      listType = nextType;
+      listItems.push(ordered ? ordered[1] : unordered[1]);
+      continue;
+    }
+    flushList();
+    paragraph.push(line.trim());
+  }
+  flushParagraph();
+  flushList();
+  if (codeLines) blocks.push({ type: 'code', text: codeLines.join('\n') });
+
+  return <div className="assistant-copy-content">
+    {blocks.map((block, index) => {
+      if (block.type === 'unordered' || block.type === 'ordered') {
+        const Tag = block.type === 'ordered' ? 'ol' : 'ul';
+        return <Tag key={`list-${index}`}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, `list-${index}-${itemIndex}`)}</li>)}</Tag>;
+      }
+      if (block.type === 'code') return <pre key={`code-${index}`}><code>{block.text}</code></pre>;
+      if (block.type.startsWith('heading')) {
+        const Tag = block.type === 'heading1' ? 'h2' : 'h3';
+        return <Tag key={`heading-${index}`}>{renderInline(block.text, `heading-${index}`)}</Tag>;
+      }
+      return <p key={`paragraph-${index}`}>{renderInline(block.text, `paragraph-${index}`)}</p>;
+    })}
+  </div>;
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -160,7 +254,7 @@ function App() {
     setBusy(true);
     try {
       const result = await api('/api/chat', { method: 'POST', body: JSON.stringify({ sessionId, message: text, memoryEnabled }) });
-      setMessages((items) => [...items, { role: 'assistant', text: result.reply, used: result.used || [], changes: result.changes || [], conflicts: result.conflicts || [], notices: result.notices || [], localId: crypto.randomUUID() }]);
+      setMessages((items) => [...items, { role: 'assistant', text: responseText(result.reply), used: result.used || [], changes: result.changes || [], conflicts: result.conflicts || [], notices: result.notices || [], localId: crypto.randomUUID() }]);
       setLastUsed(result.used || []);
       const savedCount = (result.changes || []).filter((change) => change.kind === 'created').length;
       const secretNotice = (result.notices || []).find((notice) => notice.toLowerCase().includes('not saved: looks like a secret'));
@@ -256,7 +350,7 @@ function App() {
             {message.role === 'assistant' && <span className="assistant-avatar"><Icon name="spark" size={15} /></span>}
             <div className="message-content">
               {message.role === 'user' ? <div className="user-bubble">{message.text}</div> : <>
-                <div className={`assistant-copy ${message.failed ? 'failed-copy' : ''}`}>{message.text}</div>
+                <div className={`assistant-copy ${message.failed ? 'failed-copy' : ''}`}><AssistantText text={message.text} /></div>
                 {!!message.used?.length && <div className="memory-chips"><span>Remembered</span>{message.used.map(({ memory }) => <button key={idOf(memory)} className="memory-chip" onClick={() => showMemory(memory)} title={memory.content}><span className="chip-mark">↗</span>{memory.content}</button>)}</div>}
                 {!!message.changes?.filter((change) => change.kind === 'created').length && <div className="saved-inline"><span className="saved-check"><Icon name="check" size={12} /></span>{message.changes.filter((change) => change.kind === 'created').length} new {message.changes.filter((change) => change.kind === 'created').length === 1 ? 'memory' : 'memories'} saved</div>}
                 {(message.notices || []).filter((notice) => !notice.toLowerCase().includes('not saved: looks like a secret')).map((notice, i) => <div className="message-notice" key={i}>{notice}</div>)}
