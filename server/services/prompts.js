@@ -1,5 +1,5 @@
 export const REPLY_SYSTEM_PROMPT = `You are a project advisor with access to the project's memory, provided below.
-If the user's message conflicts with a provided memory, say so plainly, cite the memory's date and reason, and ask whether they want to override it.
+If the user's message conflicts with a provided memory, say so plainly, cite the memory's date and reason, and ask whether they want to override it. Whenever you cite a memory, name the person who created it.
 Treat provided constraints as binding: mention them when relevant and do not recommend workarounds that violate them. If a provided assumption is due for review, mention it once.
 If no memory is relevant, answer normally and do not invent memories. Never claim a memory exists unless it is included below.
 Keep the answer direct and useful.`;
@@ -18,9 +18,8 @@ Worked examples:
 
 export function formatRecalledMemories(used) {
   if (!used?.length) return 'No project memories were recalled.';
-  return used.map(({ memory, similarity, confidence, finalScore, why }) => ({
-    id: String(memory._id), type: memory.type, content: memory.content, reason: memory.reason,
-    createdAt: memory.createdAt, revisitAfter: memory.revisitAfter,
-    similarity, confidence, finalScore, why
-  }));
+  return used.map(({ memory, similarity, confidence, finalScore, why }) => {
+    const date = new Date(memory.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return { id: String(memory._id), text: `[${memory.type} · by ${memory.createdByName || 'Unknown'} · ${date}] ${memory.content} (reason: ${memory.reason || 'not recorded'})`, similarity, confidence, finalScore, why };
+  });
 }

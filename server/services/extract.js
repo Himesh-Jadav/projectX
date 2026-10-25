@@ -38,12 +38,12 @@ function validate(payload, base = new Date()) {
   return { items, skipped: payload.skipped };
 }
 
-export async function extractAndReconcile(message, recalledMemories = []) {
+export async function extractAndReconcile(message, recalledMemories = [], speaker = '') {
   const context = recalledMemories.map(({ memory }) => ({
     id: String(memory._id), type: memory.type, content: memory.content, reason: memory.reason, status: memory.status
   }));
   return callLLM({ role: 'fast', json: true, validate, messages: [
-    { role: 'system', content: EXTRACT_RECONCILE_SYSTEM_PROMPT },
-    { role: 'user', content: JSON.stringify({ userMessage: message, recalledMemories: context }) }
+    { role: 'system', content: `${EXTRACT_RECONCILE_SYSTEM_PROMPT}\nAttribute every extracted item to the speaker named in the input; the JSON schema stays unchanged.` },
+    { role: 'user', content: JSON.stringify({ speaker, userMessage: message, recalledMemories: context }) }
   ] });
 }

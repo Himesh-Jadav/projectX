@@ -1,13 +1,17 @@
-import { connect, dbClient } from '../db.js';
-import { config } from '../config.js';
+import { connect, dbClient, users, projects } from '../db.js';
 import { recall, saveMemory } from '../services/memory.js';
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const userId = config.demoUserId;
-const projectId = config.demoProjectId;
+let userId;
+let projectId;
 
 try {
   await connect();
+  const alice = await users.findOne({ email: 'alice@quickbite.demo' });
+  const project = alice && await projects.findOne({ name: 'QuickBite', ownerId: alice._id });
+  if (!alice || !project) throw new Error('Seed QuickBite first with npm run seed.');
+  userId = String(alice._id);
+  projectId = String(project._id);
   const timestamp = new Date();
   const samples = [
     { type: 'decision', content: 'Use MongoDB as the main database for QuickBite.', reason: 'Menus and orders have flexible shapes, and we need to ship quickly.', confidence: 0.95 },
@@ -16,13 +20,13 @@ try {
   ];
 
   const inserted = [];
-  for (const sample of samples) inserted.push(await saveMemory({ ...sample, userId, projectId, source: { sessionId: 'smoke-session', messageId: null, quote: sample.content } }));
+  for (const sample of samples) inserted.push(await saveMemory({ ...sample, userId, createdByName: 'Alice', projectId, source: { sessionId: 'smoke-session', messageId: null, quote: sample.content } }));
   console.log(`Inserted ${inserted.length} smoke-test memories.`);
 
   const deadline = Date.now() + 30_000;
   let results = [];
   while (Date.now() < deadline) {
-    results = await recall("let's use Postgres", { userId, projectId });
+    results = await recall("let's use Postgres", { projectId });
     if (results.some(({ memory }) => inserted[0]._id.equals(memory._id))) break;
     console.log('Waiting for the new memories to become searchable...');
     await pause(3000);

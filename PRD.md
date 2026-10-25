@@ -2,13 +2,15 @@
 
 **A long-running decision assistant with persistent memory**
 MongoDB Student Hackathon · Track 1: Agentic Memory
-Version 1.0 · 24 Oct 2026 · Build window: 4-5 hours · One builder, vibe coding with Codex
+Version 1.1 · 25 Oct 2026 · v1.0 core loop built; v1.1 adds team mode (login, projects, invites, shared memory). Sections 23-27 are new and win over earlier sections if they disagree.
 
 ---
 
 ## 1. One-line pitch
 
 Hindsight is a chat assistant for a long-running project. It quietly remembers the **decisions, assumptions, and constraints** you talk about, and uses them to push back, warn, and advise in later sessions. It also knows when a memory is wrong, replaced, or expired.
+
+**Team mode (v1.1):** a whole team shares one project memory. Every decision is stored with the name of the person who made it, and the assistant can point out when one person's idea conflicts with another person's earlier decision.
 
 ## 2. The problem
 
@@ -24,11 +26,14 @@ Hindsight fixes that. The assistant carries the project's reasoning forward and 
 3. Handle the hard cases properly: correction, conflict, expiry, deletion, and secrets.
 4. Use MongoDB for what it is good at: flexible memory documents, Vector Search with metadata filters, and TTL indexes.
 5. Be repeatable: one command sets up the database, one command loads demo data.
+6. (v1.1) Work as a team product: people sign up, create projects, invite others, and share one project memory that updates live. Details in sections 23-27.
 
 **Non-goals (do not build these)**
-- Login, signup, or multiple real users (one hardcoded user)
-- Multiple projects UI (one hardcoded project, but every query still filters by `projectId`)
-- Mobile app, notifications, email
+- Email sending, social login (OAuth), email verification, password reset
+- Roles beyond owner and member
+- Private (author-only) memories inside a shared project
+- Chat between people, notifications, billing
+- Mobile app
 - Fine-tuning or training anything
 
 ## 4. Hackathon alignment
@@ -47,7 +52,7 @@ This table is the checklist for the judges. Every row has to be visible in the d
 | Memory as documents: owner, type, content, source, timestamps, lifecycle | See section 7 | Atlas document view |
 | Vector Search with filters | Section 9 | Retrieval |
 | TTL index for expiry | `expiresAt` + TTL index | Temporary-constraint demo |
-| Change streams (when multi-user/agent) | Stretch goal only. Memory panel live-updates from a change stream so two tabs stay in sync. | Optional |
+| Change streams (when multi-user/agent) | Required in v1.1. One change stream feeds live updates to every teammate in a project (section 25). | Alice's change appears in Bob's window with no refresh |
 
 ## 5. Who it is for
 
@@ -120,8 +125,9 @@ Steps 3a and 3b run **in parallel** to keep latency low. Memory is read before t
 ```json
 {
   "_id": "ObjectId",
-  "userId": "demo-user",
-  "projectId": "quickbite",
+  "userId": "64f1c0aa11b2c3d4e5f60001",
+  "createdByName": "Alice",
+  "projectId": "64f1c0aa11b2c3d4e5f60002",
   "type": "decision",
   "content": "Use MongoDB as the main database",
   "reason": "Menus and orders have flexible shapes; we must ship in 5 days",
@@ -160,6 +166,7 @@ Notes on fields:
 - `supersedes` / `supersededBy`: the chain used by the timeline.
 - `source.quote`: the exact user words the memory came from. This is what makes "why do you remember this?" answerable.
 - `embeddingModel`: stored so we never mix vectors from different models.
+- (v1.1) `userId` is the **author** of the memory. `createdByName` is copied at write time so the UI can say "Alice decided..." without a lookup. `projectId` and `userId` are stored as **strings** (the string form of the ObjectId) so filters always match. See section 23.
 
 ### 7.4 Other collections
 
@@ -196,7 +203,7 @@ Notes on fields:
 ## 9. Retrieval design
 
 1. Embed the user message with task type `RETRIEVAL_QUERY` (memories are embedded with `RETRIEVAL_DOCUMENT`).
-2. Run `$vectorSearch` with `filter: { userId, projectId, status: "active" }`, `numCandidates: 100`, `limit: 8`.
+2. Run `$vectorSearch` with `filter: { projectId, status: "active" }` (v1.1: no `userId` filter, because memory is shared by the whole project; the vector index does not need to change), `numCandidates: 100`, `limit: 8`.
 3. App-side: drop anything with `expiresAt <= now`.
 4. Keep only results with similarity ≥ **0.55** (tune on build day).
 5. Compute `finalScore = similarity × confidence`. Keep the top **5**.
@@ -278,9 +285,18 @@ A regex pass catches obvious secrets (`sk-...`, `AKIA...`, long random tokens, p
 | FR-16 | Supersede timeline view | P1 | Shows MongoDB → Postgres with dates and reasons |
 | FR-17 | Assumption check-ins at session start | P1 | Overdue assumption is raised once, answer updates it |
 | FR-18 | Outcome tracking | P1 | "Migration took 2 days" attaches to the decision and appears in later advice |
-| FR-19 | Live panel via change stream (two tabs stay in sync) | P2 | Edit in tab A appears in tab B |
+| FR-19 | Live updates via change stream (teammates' changes appear without refresh) | P0 (v1.1) | Alice's change shows in Bob's window within 2 seconds |
 | FR-20 | Recency/confidence decay in ranking | P2 | Old unconfirmed memories rank lower |
-| FR-21 | Private flag and export | P2 | Private memories excluded from export |
+| FR-21 | Private flag and export | P2 | Not part of v1.1 (see non-goals) |
+| FR-22 | Accounts: signup, login, logout with a cookie session | P0 (v1.1) | Login works; no cookie means 401 |
+| FR-23 | Multiple projects; a user sees only their own | P0 (v1.1) | Bob never sees a project he is not in |
+| FR-24 | Invite link adds a member (owner only, single use, expires) | P0 (v1.1) | Bob joins via the link; reusing it fails |
+| FR-25 | One shared project memory; every memory shows its author | P0 (v1.1) | Bob sees "by Alice" on her memories |
+| FR-26 | Cross-person conflict: pending, reviewed by the author or owner, withdrawable | P0 (v1.1) | Bob's Postgres proposal waits for Alice |
+| FR-27 | Permissions per section 23.4; non-members get 404 | P0 (v1.1) | Tests 2-6 in section 27.2 pass |
+| FR-28 | Activity feed with actor names | P1 (v1.1) | Activity tab lists who did what |
+| FR-29 | Owner can remove a member | P2 (v1.1) | Removed member loses access at once |
+| FR-30 | Migration, seed and reset updated for team mode | P0 (v1.1) | `migrate:team` keeps Phase 1 data intact |
 
 ## 12. System design
 
@@ -336,6 +352,8 @@ hindsight/
 | GET | `/api/memories/:id/chain` | Supersede chain for the timeline |
 | GET | `/api/health` | DB and provider status |
 
+**v1.1:** with team mode, every route above except `/api/health` lives under `/api/projects/:projectId/...` and needs login and membership. The full route list is in section 24.
+
 ### 12.4 LLM provider layer
 
 - Keys come from `.env` as comma-separated lists: `GROQ_API_KEYS`, `GEMINI_API_KEYS`, `OPENROUTER_API_KEYS`.
@@ -350,6 +368,8 @@ hindsight/
 - Token budget: about 3K tokens per message across both calls. Keep recalled memories short and keep chat history to the last 6 messages.
 
 ## 13. UI
+
+**v1.1 UI note:** the visual direction in this section is superseded by `UI_PROMPT.md` (dark glass, based on the Ruixen Moon Chat component). Team mode adds only these screens and controls: a login/signup card, a project switcher, an invite dialog with the members list, a "Needs your review" list, and an Activity tab. Nothing else.
 
 Design direction: **minimal, premium, calm, modern.**
 
@@ -469,7 +489,7 @@ The project is a success if, in a live run:
 
 | Stage | What changes |
 |---|---|
-| v2: Teammate mode | Add `ownerId` and workspace scoping, a second agent panel, a change stream for live shared memory |
+| v2: Teammate mode | **Built in v1.1** (sections 23-27) |
 | v3: Ingest | Pull decisions from meeting notes, Slack, PRs, and docs |
 | v4: Proactive | Weekly digest, "assumptions at risk" alerts, warnings when a commit or ticket contradicts a decision |
 | v5: Memory layer for coding agents | Expose Hindsight as an MCP server so Codex and Claude Code read and write project decisions directly |
@@ -479,3 +499,202 @@ The project is a success if, in a live run:
 1. Final product name (Hindsight is a placeholder).
 2. Exact model names available on Groq and Gemini on build day.
 3. Whether the Atlas cluster in use supports MongoDB's automated embeddings. The plan assumes **not**, and uses Gemini embeddings so setup is predictable.
+4. Whether change streams work on the M0 cluster in use. It should (M0 is a replica set), but test it in the first 10 minutes of step T4.
+
+---
+
+## 23. Team mode (v1.1)
+
+Team mode turns the app from one person's assistant into a shared project brain. Several people join a project, and everyone's decisions land in one shared memory. **If anything here disagrees with sections 1-22, this section wins.**
+
+### 23.1 What changes
+
+| Area | v1.0 | v1.1 |
+|---|---|---|
+| People | One hardcoded user | Accounts with login |
+| Projects | One hardcoded project | Many; each user sees only the ones they belong to |
+| Memory scope | One user inside one project | The **project**, shared by every member |
+| Authorship | Not tracked | Every memory records who created it |
+| Conflicts | You against your past self | Can be between two people |
+| Live updates | Stretch goal | Required (change streams) |
+
+### 23.2 New collections
+
+- **`users`**: `{ _id, email (unique, lowercase), name, passwordHash, createdAt }`
+- **`projects`**: `{ _id, name, ownerId, createdAt }`
+- **`memberships`**: `{ projectId, userId, role: "owner" | "member", joinedAt, invitedBy }`
+- **`invites`**: `{ projectId, tokenHash, createdBy, createdAt, expiresAt, usedAt, usedBy }`
+
+Indexes:
+- `users`: unique on `email`.
+- `memberships`: unique on `{ projectId, userId }`, plus `{ userId }`.
+- `invites`: unique on `tokenHash`, plus a **TTL index** on `expiresAt` (`expireAfterSeconds: 0`). Old invites clean themselves up.
+- **No vector index change.** It already filters on `projectId` and `status`. Recall simply stops filtering by `userId`.
+
+### 23.3 Changes to existing collections
+
+- `memories`: `userId` now means the **author**; add `createdByName`. Store `projectId` and `userId` as strings.
+- `memory_events`: add `projectId`, `actorId`, `actorName`. New event types: `conflict_withdrawn`, `conflict_stale`, `member_joined`, `member_removed`. Delete events still carry **no memory content**.
+- `messages`: `userId` is the speaker. Each person has their own chat sessions. **Memory is what is shared, not the chats.**
+
+### 23.4 Roles and permissions
+
+| Action | Owner | Member |
+|---|---|---|
+| Create a project | any logged-in user (becomes its owner) | same |
+| See the project, memories, activity | yes | yes |
+| Chat (this creates memories) | yes | yes |
+| Invite people, remove members | yes | no |
+| Delete or invalidate a memory | any memory | only ones they created |
+| Resolve a conflict (Override / Keep) | any | only conflicts against memories they created |
+| Withdraw a pending memory | any | only their own |
+| Answer an assumption check-in | yes | yes |
+
+A person who is not a member gets a **404**, never a 403, so the project's existence does not leak.
+
+### 23.5 Conflicts between people (the core story)
+
+1. Bob says "let's use Postgres". Reconcile finds that it conflicts with Alice's active MongoDB decision.
+2. The new memory is saved as `pending`, authored by Bob. Bob's reply names Alice and shows a card: "This conflicts with Alice's decision from 24 Oct. Waiting for her review," with a **Withdraw** button.
+3. Alice's panel shows it **live** under "Needs your review", with Override and Keep.
+4. **Who can resolve:** the author of the old memory, or the project owner. If Bob contradicts his *own* memory, he resolves it immediately in his own chat.
+5. **Override:** pending becomes active, the old memory becomes superseded, and the two link to each other. **Keep:** the pending memory is deleted. **Withdraw:** same, done by Bob. Each writes a `memory_events` entry with the actor.
+6. If the target is superseded, invalidated, or deleted while other pending items still point at it, those pending items are deleted with a `conflict_stale` event.
+7. If Alice is offline, the item waits and appears in her "Needs your review" list when she returns. Pending items are never used in retrieval.
+
+### 23.6 Attribution
+
+- The LLM sees each memory as: `[decision · by Alice · 24 Oct] Use MongoDB ... (reason: ...)`.
+- The current speaker goes with the message: `Bob says: ...`.
+- Reply rule: when citing a memory, say who made it ("Alice decided...").
+- Extraction always attributes new memories to the current speaker.
+
+## 24. Authentication and project API
+
+### 24.1 Auth (keep it plain)
+
+- Email + password. `bcryptjs` (cost 10). Minimum 8 characters. Email lowercased and unique. Wrong email and wrong password give the same error.
+- Session: a JWT (HS256) signed with `JWT_SECRET`, valid 7 days, stored in an **httpOnly cookie** named `sid` (`SameSite=Lax`, `Secure` in production). No tokens in localStorage.
+- **Not building:** email verification, password reset, OAuth, account lockout.
+- Rate limit: 20 chat requests per minute per user, in memory. This protects the shared free LLM quota.
+- Secrets (`JWT_SECRET`, `DEMO_PASSWORD`) live in `.env`. `.env.example` has placeholders only.
+
+### 24.2 Middleware
+
+- `requireAuth`: reads the cookie and loads the user, else 401.
+- `requireProjectMember`: checks `memberships` for `(projectId, userId)`, else **404**. Attaches the membership.
+- `requireOwner`: member with role `owner`, else 403.
+- **Never fetch a memory by id alone.** Always query `{ _id, projectId }`. Otherwise a member of project A could read or change a memory from project B by guessing its id.
+
+### 24.3 Routes
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| POST | `/api/auth/signup` | public | `{ name, email, password }`, creates the user and logs in |
+| POST | `/api/auth/login` | public | `{ email, password }`, sets the cookie |
+| POST | `/api/auth/logout` | user | clears the cookie |
+| GET | `/api/auth/me` | user | current user |
+| GET | `/api/projects` | user | the user's projects, with role |
+| POST | `/api/projects` | user | `{ name }`, creates a project and makes the user its owner |
+| GET | `/api/projects/:projectId` | member | project and members list |
+| POST | `/api/projects/:projectId/invites` | owner | returns `{ url, expiresAt }`. The token is shown **once**; only its hash is stored. Single use, expires in 7 days. |
+| GET | `/api/invites/:token` | user | preview: project name and who invited |
+| POST | `/api/invites/:token/accept` | user | joins the project as member (used or expired gives 410) |
+| DELETE | `/api/projects/:projectId/members/:userId` | owner | removes a member (an owner cannot remove themselves) |
+| GET | `/api/projects/:projectId/activity` | member | latest 50 events with actor names |
+| GET | `/api/projects/:projectId/stream` | member | live events (SSE), see section 25 |
+| POST | `/api/projects/:projectId/memories/:id/withdraw` | author of a pending memory | deletes the pending memory |
+
+Every route from section 12.3 moves under `/api/projects/:projectId/...` (for example `POST /api/projects/:projectId/chat` and `GET /api/projects/:projectId/memories`). `GET .../memories` also returns a separate `needsReview` list: pending memories against memories the viewer may resolve. The chat response's `conflicts[]` gains `targetAuthorName` and `canResolveNow`.
+
+### 24.4 Migration, seed and reset
+
+- `npm run migrate:team` (idempotent, never deletes data): creates users **Alice** and **Bob** (password from `DEMO_PASSWORD`), creates project **QuickBite** owned by Alice, and attaches every existing memory, message and event to it (`projectId` = the new project's id string, `userId` = Alice's id string, `createdByName` = "Alice"). Prints document counts before and after.
+- `npm run seed`: seeds Alice, Bob and QuickBite with Alice as owner. **Bob is not a member**, because the demo invites him live. `--with-bob` adds him as a member for faster testing.
+- `npm run demo:reset`: removes all memories, messages, events and invites for QuickBite, removes Bob's membership, then reseeds.
+
+## 25. Real-time with change streams
+
+- The server opens **one** change stream on `memories` and `memory_events` (not one per user) and fans each event out to the SSE clients of the matching project.
+- Endpoint: `GET /api/projects/:projectId/stream` (members only). The payload is built on the server: `{ kind, memoryId, actorName, summary, at }`. Raw documents are never sent.
+- A change stream's delete event carries only the `_id`. So deletions and TTL expiries are announced by the `memory_events` insert (written before the memory is removed), and the client simply refetches the list.
+- A keep-alive comment every 25 seconds. The browser reconnects by itself, and on reconnect it refetches memories.
+- Change streams need a replica set. Atlas M0 is one, but **test it in the first 10 minutes** of step T4.
+- **Fallback:** if streams fail, the client polls `GET .../memories` every 3 seconds. The demo still works, but we lose the change-streams box, so use it only as a safety net.
+
+## 26. Team demo script (about 5 minutes)
+
+Two windows: **A** is Alice (normal window) and **B** is Bob (incognito). Prep: `npm run demo:reset`, and log both in.
+
+1. **A:** open QuickBite and send the three messages from section 14 steps 1-3 (MongoDB decision, mobile-first assumption, temporary no-paid-API constraint).
+2. **A:** click **Invite** and copy the link.
+3. **B:** open the link and click Join. QuickBite appears, and Alice's memories show **her name**.
+4. **B:** send "Let's use Postgres for the orders table." The reply says *"Alice decided on MongoDB on 24 Oct because..."*, and a "Waiting for Alice's review" card appears.
+5. **A (no refresh):** "Needs your review" shows Bob's proposal. Click **Override**. Both windows update, and the Activity tab shows who did what.
+6. **B:** "Add a paid SMS OTP service for login." The warning cites Alice's constraint.
+7. **Permissions:** in B, try to delete Alice's memory. The button is not there, and a direct API call returns 403.
+8. **Isolation:** Alice creates a second project, "Secret". Bob never sees it in his project list.
+9. A quick round of the hard cases from section 14: correction, secret, expiry, delete.
+
+Close with: "One shared memory. Everyone's decisions, everyone's accountability, live."
+
+## 27. Team build plan, tests and risks
+
+### 27.1 Build plan
+
+| Step | Work | Time | Gate |
+|---|---|---|---|
+| T1 | Auth: users, signup, login, cookie, middleware | 45 min | Signup, login, `/me`, logout work from curl |
+| T2 | Projects, memberships, invites | 60 min | Alice invites, Bob accepts; non-members get 404 |
+| T3 | Routes under projects, authorship, cross-person conflicts, migration | 60 min | Phase 1 tests still pass; Bob's Postgres message cites Alice and Alice can resolve it |
+| T4 | Change streams and SSE | 45 min | Two open streams see each other's changes in under 2 seconds |
+| T5 | UI: login, project switcher, invite dialog, review list, Activity tab | 75 min | Team demo runs in two windows |
+| T6 | Team tests and rehearsal | 30 min | `verify:team` all pass |
+
+**Cut order if time runs out:** (1) remove-member, (2) Activity tab, (3) SSE (use polling), (4) the multi-project UI (keep one project, but keep real auth and invites). **Never cut the authorization checks, and never cut cross-person conflicts**, since that is the story.
+
+### 27.2 Tests (`npm run verify:team`)
+
+1. Signup and login work; a wrong password gives 401; `/me` without a cookie gives 401.
+2. A non-member request to any project route gets 404.
+3. A member of project A asking for a project B memory id through project A's route gets 404.
+4. Recall in project A never returns project B memories, even with identical text.
+5. Invites: a token works once; an expired or used token fails; only the owner can create one.
+6. A member cannot delete or invalidate someone else's memory (403); the owner can.
+7. Bob's contradicting message creates a `pending` memory authored by Bob. Alice can resolve it; Bob cannot resolve Alice's conflict but can withdraw his own.
+8. Resolving by override deletes other pending items for the same target (`conflict_stale`).
+9. Replies and conflict cards name the correct author.
+10. A memory saved by Alice reaches Bob's SSE connection within 2 seconds; a non-member's connection gets nothing.
+11. The Phase 1 tests (`verify:step1`) still pass.
+
+### 27.3 Edge cases
+
+| Case | Behaviour |
+|---|---|
+| Two people contradict the same memory at the same moment | Both become pending; resolving one marks the other stale. |
+| Owner removes a member | Their memories stay (they belong to the project); their access ends at once. |
+| A removed member had pending conflicts | Those pending items are deleted. |
+| Invite link opened while logged out | Go to login, then return to the invite. |
+| Same person accepts twice | Idempotent: already a member. |
+| User belongs to many projects | Memory, chat and stream are always scoped by the project in the URL. |
+| Shared LLM quota runs out | Fallback chain, then a friendly message. The per-user rate limit stops one person from burning it all. |
+
+### 27.4 Risks
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Authorization bug leaks memory across projects | The worst failure for a memory product | One middleware on every route, lookups always by `{ _id, projectId }`, tests 2-4 |
+| Auth work eats the timeline | No time left for the memory story | Plain email + password, nothing extra, cut order above |
+| Change streams unsupported or flaky | Weak live demo | Test early, polling fallback |
+| Two users and rehearsals share the free LLM quota | Demo stalls | Per-user rate limit, caching, separate models per role |
+| Migration damages the working Phase 1 data | Lose the working demo | Additive and idempotent; note document counts before and after; commit to git first |
+| The demo needs two windows | Confusing on stage | Practise with one normal and one incognito window, pre-logged-in |
+
+### 27.5 Design choices to explain to judges
+
+- **Memory is shared per project, not per user.** The point of a team is shared reasoning: a decision Alice made should stop Bob from repeating the debate.
+- **Every memory has an author.** "Why?" now also answers "who?", which is what makes the memory trustworthy.
+- **The author of a decision resolves conflicts against it.** Whoever owns the decision decides whether to change it, with the project owner as a backstop.
+- **Invite links, not emails.** No email service to set up, and the demo is identical.
+- **One change stream for the whole server.** It scales with the number of projects, not the number of connected users.
+- **Invite tokens are stored as hashes, with a TTL.** A database leak does not leak working invites, and the same TTL feature cleans them up.

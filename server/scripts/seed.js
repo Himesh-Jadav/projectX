@@ -1,10 +1,32 @@
 import { pathToFileURL } from 'node:url';
-import { config } from '../config.js';
-import { connect, dbClient, memories } from '../db.js';
+import bcrypt from 'bcryptjs';
+import { connect, dbClient, memories, users, projects, memberships } from '../db.js';
 import { saveMemory, supersede } from '../services/memory.js';
 
-const userId = config.demoUserId;
-const projectId = config.demoProjectId;
+let userId;
+let projectId;
+
+async function ensureTeam() {
+  const password = process.env.DEMO_PASSWORD;
+  if (!password || password.length < 8) throw new Error('Set DEMO_PASSWORD to a value of at least 8 characters.');
+  const passwordHash = await bcrypt.hash(password, 10);
+  const people = {};
+  for (const [name, email] of [['Alice', 'alice@quickbite.demo'], ['Bob', 'bob@quickbite.demo']]) {
+    await users.updateOne({ email }, { $set: { name, email, passwordHash }, $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+    people[name] = await users.findOne({ email });
+  }
+  let project = await projects.findOne({ name: 'QuickBite', ownerId: people.Alice._id });
+  if (!project) {
+    const { insertedId } = await projects.insertOne({ name: 'QuickBite', ownerId: people.Alice._id, createdAt: new Date() });
+    project = { _id: insertedId };
+  }
+  userId = String(people.Alice._id);
+  projectId = String(project._id);
+  await memberships.updateOne({ projectId: project._id, userId: people.Alice._id }, { $setOnInsert: { role: 'owner', joinedAt: new Date(), invitedBy: people.Alice._id } }, { upsert: true });
+  if (process.argv.includes('--with-bob')) {
+    await memberships.updateOne({ projectId: project._id, userId: people.Bob._id }, { $setOnInsert: { role: 'member', joinedAt: new Date(), invitedBy: people.Alice._id } }, { upsert: true });
+  } else await memberships.deleteOne({ projectId: project._id, userId: people.Bob._id });
+}
 
 async function ensureSeedMemory(key, memory) {
   const existing = await memories.findOne({ userId, projectId, 'source.sessionId': 'seed', 'source.messageId': key });
@@ -12,6 +34,7 @@ async function ensureSeedMemory(key, memory) {
   return saveMemory({
     ...memory,
     userId,
+    createdByName: 'Alice',
     projectId,
     source: { sessionId: 'seed', messageId: key, quote: memory.content }
   });
@@ -19,6 +42,7 @@ async function ensureSeedMemory(key, memory) {
 
 export async function seedDemoData() {
   await connect();
+  await ensureTeam();
   const now = new Date();
   const authDecision = await ensureSeedMemory('auth-decision', {
     type: 'decision', content: 'Use email magic links for QuickBite authentication.',
@@ -52,7 +76,7 @@ export async function seedDemoData() {
     type: 'decision', content: 'Use separate staging and production environments for QuickBite.',
     reason: 'Separate environments protect production during testing.', confidence: 0.9
   });
-  if (previous.status === 'active' && current.status === 'active') await supersede(previous._id, current._id);
+  if (previous.status === 'active' && current.status === 'active') await supersede(projectId, previous._id, current._id, { userId, actorName: 'Alice' });
 
   console.log('Seed complete: 2 decisions, 1 constraint, 1 overdue assumption, 1 linked outcome, and 1 superseded pair.');
 }

@@ -1,0 +1,15 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Temporary Atlas change stream probe",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				".tmp-realtime-probe.mjs"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
