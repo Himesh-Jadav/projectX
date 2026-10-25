@@ -4,6 +4,7 @@ import { ObjectId } from 'mongodb';
 import { config } from '../config.js';
 import { connect, invites, memberships, memory_events, projects, users } from '../db.js';
 import { requireAuth, requireOwner, requireProjectMember } from '../middleware/auth.js';
+import { attachProjectStream } from '../services/realtime.js';
 
 const router = Router();
 const INVITE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
@@ -57,6 +58,10 @@ router.get('/projects/:projectId/activity', requireAuth, requireProjectMember, a
     const activity = await memory_events.find({ projectId: String(req.params.projectId) }).sort({ at: -1 }).limit(50).toArray();
     return res.json({ activity });
   } catch (error) { return next(error); }
+});
+
+router.get('/projects/:projectId/stream', requireAuth, requireProjectMember, (req, res) => {
+  attachProjectStream(req, res);
 });
 
 router.get('/projects/:projectId', requireAuth, requireProjectMember, async (req, res, next) => {

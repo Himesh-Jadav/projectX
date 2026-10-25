@@ -538,3 +538,44 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visi
   .moon-chat-shell.is-new-session::before { animation: none; }
 }
 .auth-screen{min-height:100vh;display:grid;place-items:center;background:#f7f7f4;padding:24px;color:#20211f}.auth-card{width:min(100%,420px);display:grid;gap:14px;padding:32px;background:#fff;border:1px solid #e7e8e3;border-radius:18px;box-shadow:0 18px 50px #1c201b0d}.auth-card h1,.auth-card p{margin:0}.auth-card label{display:grid;gap:6px;font-size:13px}.auth-card input{border:1px solid #dfe1db;border-radius:9px;padding:12px;font:inherit}.auth-card .inline-error{color:#a12828}.auth-card .button{margin-top:4px}
+
+/* Team controls reuse the existing monochrome glass surface and pill treatment. */
+.is-new-session .topbar { gap: 18px; }
+.project-switcher,.user-menu-wrap { position: relative; }
+.quick-pill { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 37px; padding: 0 13px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; color: #dedee2; background: rgba(0,0,0,.42); font-size: 11px; white-space: nowrap; cursor: pointer; }
+.quick-pill:hover { border-color: rgba(255,255,255,.36); color: #fff; background: rgba(255,255,255,.12); }
+.glass-menu { position: absolute; z-index: 8; top: calc(100% + 9px); left: 0; width: 230px; padding: 8px; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; color: #f4f4f5; background: rgba(13,15,21,.96); box-shadow: 0 16px 40px rgba(0,0,0,.35); backdrop-filter: blur(20px); }
+.glass-menu > button,.glass-menu form button { width: 100%; display: flex; justify-content: space-between; gap: 10px; padding: 10px; border: 0; border-radius: 8px; color: inherit; background: transparent; text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
+.glass-menu > button:hover,.glass-menu form button:hover { background: rgba(255,255,255,.09); }
+.glass-menu small { color: #aeb4aa; font-size: 10px; }
+.glass-menu form { display: grid; gap: 5px; padding-top: 7px; margin-top: 5px; border-top: 1px solid rgba(255,255,255,.13); }
+.glass-menu input,.invite-link input { min-width: 0; width: 100%; padding: 9px; border: 1px solid rgba(255,255,255,.18); border-radius: 8px; color: #f4f4f5; background: rgba(0,0,0,.24); font: inherit; font-size: 11px; }
+.user-menu { left: auto; right: 0; width: 130px; }
+.topbar-actions { gap: 10px; }
+.auth-screen { color: #f5f5f4; background: #080a0d url('https://cdn.21st.dev/assets/mirror/c3/c333918af688a4a8a3d004652e6c0ee219457a9d84d380eeb31f513d4b59a09f.png') center / cover fixed no-repeat; }
+.auth-card { color: #f4f4f5; border-color: rgba(255,255,255,.17); background: rgba(13,15,21,.88); box-shadow: 0 18px 55px rgba(0,0,0,.4); backdrop-filter: blur(22px); }
+.auth-card .eyebrow,.auth-card > p { color: #b8bcb8; }
+.auth-card label { color: #e4e4e7; }
+.auth-card input { color: #f4f4f5; border-color: rgba(255,255,255,.2); background: rgba(0,0,0,.24); }
+.auth-card .auth-error { color: #f87171; font-size: 12px; }
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid rgba(255,255,255,.14); }
+.auth-tabs button { padding: 10px; border: 0; border-bottom: 2px solid transparent; color: #b8bcb8; background: transparent; font: inherit; cursor: pointer; }
+.auth-tabs button.active { border-bottom-color: #e4e4e7; color: #fff; }
+.glass-backdrop { position: fixed; z-index: 12; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.58); backdrop-filter: blur(6px); }
+.invite-modal { width: min(100%, 460px); max-height: min(80vh,680px); overflow: auto; display: grid; gap: 13px; padding: 22px; border: 1px solid rgba(255,255,255,.17); border-radius: 16px; color: #f4f4f5; background: rgba(13,15,21,.97); box-shadow: 0 18px 55px rgba(0,0,0,.42); }
+.invite-modal h2,.invite-modal h3 { margin: 0; font-size: 15px; }
+.invite-modal h3 { padding-top: 8px; border-top: 1px solid rgba(255,255,255,.13); }
+.invite-link { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.invite-link small { grid-column: 1 / -1; color: #aeb4aa; font-size: 11px; }
+.member-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; color: #e5e7eb; font-size: 12px; }
+.member-row small { color: #aeb4aa; }
+.member-row .quick-pill { margin-left: auto; }
+.memory-author { margin: 5px 0 0; color: #a3a3a3; font-size: 12px; }
+.review-section { margin: 0 0 16px; }
+.review-section > h3 { margin: 2px 0 9px; color: #e5e7eb; font-size: 13px; font-weight: 600; }
+.activity-row { display: grid; grid-template-columns: auto 1fr; gap: 4px 6px; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.1); color: #e4e4e7; font-size: 12px; }
+.activity-row > span { color: #fff; font-weight: 600; }
+.activity-row small { grid-column: 1 / -1; color: #a3a3a3; font-size: 10px; }
+.moon-chat-shell .panel-tabs { grid-template-columns: repeat(4,1fr); }
+@media (max-width: 800px) { .is-new-session .topbar { gap: 8px; } .quick-pill { min-height: 34px; padding: 0 9px; font-size: 10px; } }
+@media (max-width: 520px) { .project-switcher { display: block; } .project-switcher .quick-pill { max-width: 120px; overflow: hidden; } .topbar-actions { gap: 5px; } .is-new-session .button-new { padding: 0; } .is-new-session .panel-tabs { grid-template-columns: repeat(4,minmax(0,1fr)); } }

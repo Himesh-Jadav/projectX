@@ -10,6 +10,7 @@ import memoriesRouter from './routes/memories.js';
 import sessionRouter from './routes/session.js';
 import authRouter from './routes/auth.js';
 import projectsRouter from './routes/projects.js';
+import { startRealtime } from './services/realtime.js';
 
 const app = express();
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -41,6 +42,7 @@ app.get('/api/health', async (_req, res) => {
 });
 
 if (existsSync(webDist)) app.use(express.static(webDist));
+if (existsSync(webDist)) app.get('*', (_req, res) => res.sendFile(resolve(webDist, 'index.html')));
 
 app.use((error, _req, res, _next) => {
   console.error(`Request failed: ${error.message}`);
@@ -59,4 +61,7 @@ app.use((error, _req, res, _next) => {
 });
 
 const port = Number(process.env.PORT || 3001);
-app.listen(port, () => console.log(`Hindsight API listening on http://localhost:${port}`));
+app.listen(port, () => {
+  console.log(`Hindsight API listening on http://localhost:${port}`);
+  startRealtime();
+});

@@ -157,9 +157,9 @@ export async function deleteMemory(projectId, id, actor) {
   await connect();
   const _id = idValue(id);
   const document = await getMemory(projectId, _id);
+  await event(_id, 'deleted', {}, actorFields(actor ?? { userId: document.userId, createdByName: document.createdByName }, projectId));
   const result = await memories.deleteOne({ _id, projectId: String(projectId) });
   if (!result.deletedCount) throw new Error('Memory not found.');
-  await event(_id, 'deleted', {}, actorFields(actor ?? { userId: document.userId, createdByName: document.createdByName }, projectId));
   await stalePending(projectId, _id, actor);
   return { deleted: true };
 }
