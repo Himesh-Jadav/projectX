@@ -10,6 +10,10 @@ export async function connect() {
     connectionPromise = client.connect().then(() => {
       const database = client.db(config.dbName);
       collections = {
+        users: database.collection('users'),
+        projects: database.collection('projects'),
+        memberships: database.collection('memberships'),
+        invites: database.collection('invites'),
         memories: database.collection('memories'),
         messages: database.collection('messages'),
         memory_events: database.collection('memory_events')
@@ -37,6 +41,10 @@ function collectionProxy(name) {
 }
 
 export const memories = collectionProxy('memories');
+export const users = collectionProxy('users');
+export const projects = collectionProxy('projects');
+export const memberships = collectionProxy('memberships');
+export const invites = collectionProxy('invites');
 export const messages = collectionProxy('messages');
 export const memory_events = collectionProxy('memory_events');
 export const dbClient = client;

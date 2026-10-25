@@ -1,4 +1,5 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,15 +8,20 @@ import { connect } from './db.js';
 import chatRouter from './routes/chat.js';
 import memoriesRouter from './routes/memories.js';
 import sessionRouter from './routes/session.js';
+import authRouter from './routes/auth.js';
+import projectsRouter from './routes/projects.js';
 
 const app = express();
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const webDist = resolve(currentDir, '../web/dist');
 
 app.use(express.json({ limit: '1mb' }));
-app.use('/api/chat', chatRouter);
-app.use('/api/memories', memoriesRouter);
-app.use('/api/session', sessionRouter);
+app.use(cookieParser());
+app.use('/api/auth', authRouter);
+app.use('/api', projectsRouter);
+app.use('/api/projects/:projectId/chat', chatRouter);
+app.use('/api/projects/:projectId/memories', memoriesRouter);
+app.use('/api/projects/:projectId/session', sessionRouter);
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -49,7 +55,7 @@ app.use((error, _req, res, _next) => {
       error: 'MongoDB Atlas is unreachable. Check that the cluster is running, this network can reach Atlas over TLS, and your current IP is on the Atlas IP Access List.'
     });
   }
-  res.status(500).json({ error: 'The request could not be completed.' });
+  res.status(error.status ?? 500).json({ error: error.status ? error.message : 'The request could not be completed.' });
 });
 
 const port = Number(process.env.PORT || 3001);

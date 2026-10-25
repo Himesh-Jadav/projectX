@@ -44,7 +44,18 @@ async function ensureVectorIndex(collection) {
 
 try {
   const database = await connect();
-  for (const name of ['memories', 'messages', 'memory_events']) await ensureCollection(database, name);
+  for (const name of ['users', 'projects', 'memberships', 'invites', 'memories', 'messages', 'memory_events']) await ensureCollection(database, name);
+
+  await database.collection('users').createIndex({ email: 1 }, { unique: true, name: 'users_email_unique' });
+  console.log('Unique users email index is ready.');
+
+  const membershipCollection = database.collection('memberships');
+  await membershipCollection.createIndex({ projectId: 1, userId: 1 }, { unique: true, name: 'memberships_project_user_unique' });
+  await membershipCollection.createIndex({ userId: 1 }, { name: 'memberships_user' });
+  const inviteCollection = database.collection('invites');
+  await inviteCollection.createIndex({ tokenHash: 1 }, { unique: true, name: 'invites_tokenHash_unique' });
+  await inviteCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'invites_expiresAt_ttl' });
+  console.log('Membership and invite indexes are ready.');
 
   const memoryCollection = database.collection('memories');
   await memoryCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'memories_expiresAt_ttl' });

@@ -15,9 +15,16 @@ if (!Number.isInteger(dimensions) || dimensions < 1) {
   throw new Error('EMBEDDING_DIMS must be a positive integer (768 for the configured Gemini model).');
 }
 
+const jwtSecret = required('JWT_SECRET');
+if (jwtSecret.length < 32) {
+  throw new Error('JWT_SECRET must be at least 32 characters long.');
+}
+
 export const config = Object.freeze({
   mongodbUri: required('MONGODB_URI'),
   dbName: required('DB_NAME'),
+  jwtSecret,
+  appUrl: process.env.APP_URL?.trim() || 'http://localhost:5173',
   groqApiKeys: keyList('GROQ_API_KEYS'),
   geminiApiKeys: keyList('GEMINI_API_KEYS'),
   openrouterApiKeys: keyList('OPENROUTER_API_KEYS'),
