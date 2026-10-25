@@ -160,7 +160,9 @@ function Icon({ name, size = 16 }) {
     check: <><path d="m5 12 4 4L19 6" /></>,
     close: <><path d="m6 6 12 12M18 6 6 18" /></>,
     book: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" /><path d="M4 5.5v16M8 7h8M8 11h8" /></>,
-    quote: <><path d="M10 11H5V6h5v5Zm9 0h-5V6h5v5ZM5 11c0 4 1.5 6 4 7m5-7c0 4 1.5 6 4 7" /></>
+    quote: <><path d="M10 11H5V6h5v5Zm9 0h-5V6h5v5ZM5 11c0 4 1.5 6 4 7m5-7c0 4 1.5 6 4 7" /></>,
+    sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></>,
+    moon: <><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></>
   };
   return <svg {...common}>{paths[name] || paths.spark}</svg>;
 }
@@ -233,10 +235,31 @@ function App() {
   const [timeline, setTimeline] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [mobilePanel, setMobilePanel] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 801px)').matches);
+  const [theme, setTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('hindsight-theme');
+      if (stored === 'light' || stored === 'dark') return stored;
+    }
+    return 'dark';
+  });
   const inputRef = useRef(null);
   const feedRef = useRef(null);
   const toastTimer = useRef(null);
   const startedRef = useRef(false);
+
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem('hindsight-theme', next); } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+  }, [theme]);
 
   const notify = useCallback((message, kind = 'success') => {
     setToast({ message, kind });
@@ -364,11 +387,21 @@ function App() {
     <div className="checkin-actions"><button className="button button-quiet button-small" onClick={() => mutateMemory(item.memory, 'invalidate')}>No longer true</button><button className="icon-button" aria-label="Confirm memory" title="Confirm" onClick={() => mutateMemory(item.memory, 'confirm')}><Icon name="check" /></button></div>
   </div>;
 
-  return <div className={`app-shell moon-chat-shell is-new-session ${messages.length ? 'has-conversation' : ''}`}>
+  return <div className={`app-shell is-new-session ${theme === 'dark' ? 'moon-chat-shell theme-dark' : 'theme-light'} ${messages.length ? 'has-conversation' : ''}`}>
     <header className="topbar">
       <a className="brand" href="#" aria-label="Hindsight home"><span className="brand-mark"><Icon name="spark" size={18} /></span><span>hindsight</span></a>
       <div className="project-indicator"><span className="project-avatar">Q</span><div><small>YOUR PROJECT</small><strong>QuickBite</strong></div><span className="project-chevron">⌄</span></div>
       <div className="topbar-actions">
+        <button
+          type="button"
+          className="button button-theme"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
+          <span className="theme-toggle-label">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+        </button>
         <button className="button button-memory" aria-pressed={mobilePanel} onClick={() => setMobilePanel((value) => !value)}><Icon name="book" size={15} /><span>Memory</span></button>
         <label className={`memory-toggle ${memoryEnabled ? 'enabled' : ''}`} title="Memory on or off"><span>Memory</span><input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} /><span className="toggle-track"><i /></span><b>{memoryEnabled ? 'On' : 'Off'}</b></label>
         <button className="button button-new" onClick={() => startSession(true)}><Icon name="plus" size={15} /><span>New session</span></button>
