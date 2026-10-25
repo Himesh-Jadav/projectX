@@ -250,6 +250,9 @@ function App() {
   const [inviteUrl, setInviteUrl] = useState('');
   const [inviteExpiry, setInviteExpiry] = useState('');
   const [members, setMembers] = useState([]);
+  const [invitations, setInvitations] = useState([]);
+  const [inviteUsername, setInviteUsername] = useState('');
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [activity, setActivity] = useState([]);
   const [inviteToken, setInviteToken] = useState(() => window.location.pathname.match(/^\/invite\/([^/]+)/)?.[1] || '');
   const [invitePreview, setInvitePreview] = useState(null);
@@ -283,8 +286,10 @@ function App() {
       try {
         const { user: currentUser } = await api('/api/auth/me');
         const { projects } = await api('/api/projects');
+        const { invitations: pendingInvites = [] } = await api('/api/invitations');
         setUser(currentUser);
         setProjectList(projects || []);
+        setInvitations(pendingInvites);
         let remembered = '';
         try { remembered = localStorage.getItem('hindsight:lastProject') || ''; } catch { /* Storage can be disabled. */ }
         setProjectId(projects?.some((project) => project.id === remembered) ? remembered : (projects?.[0]?.id || ''));
@@ -305,8 +310,10 @@ function App() {
       const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
       const { user: currentUser } = await api(endpoint, { method: 'POST', body: JSON.stringify(login) });
       const { projects } = await api('/api/projects');
+      const { invitations: pendingInvites = [] } = await api('/api/invitations');
       setUser(currentUser);
       setProjectList(projects || []);
+      setInvitations(pendingInvites);
       let remembered = '';
       try { remembered = localStorage.getItem('hindsight:lastProject') || ''; } catch { /* Storage can be disabled. */ }
       setProjectId(projects?.some((project) => project.id === remembered) ? remembered : (projects?.[0]?.id || ''));
@@ -315,9 +322,9 @@ function App() {
 
   const createProject = async (event) => {
     event.preventDefault();
-    if (!newProjectName.trim()) return;
     try {
-      const { project } = await api('/api/projects', { method: 'POST', body: JSON.stringify({ name: newProjectName.trim() }) });
+      const { project } = await api('/api/projects', { method: 'POST', body: JSON.stringify({ name: newProjectName.trim() || 'My workspace' }) });
+      startedRef.current = false;
       setProjectList((items) => [...items, project]); setProjectId(project.id); setNewProjectName(''); setProjectMenu(false);
     } catch (error) { notify(error.message, 'warning'); }
   };
@@ -334,8 +341,27 @@ function App() {
   }, [projectId]);
 
   const openInvites = async () => {
-    setInviteOpen(true); setInviteUrl(''); setInviteExpiry('');
+    setInviteOpen(true); setInviteUrl(''); setInviteExpiry(''); setInviteUsername('');
     try { await loadProjectDetails(); } catch (error) { notify(error.message, 'warning'); }
+  };
+  const inviteUser = async (event) => {
+    event.preventDefault();
+    if (!inviteUsername.trim()) return;
+    setInviteBusy(true);
+    try {
+      const result = await api(`/api/projects/${projectId}/invitations`, { method: 'POST', body: JSON.stringify({ username: inviteUsername.trim() }) });
+      notify(`Invitation sent to ${result.invitation.username}.`);
+      setInviteUsername('');
+    } catch (error) { notify(error.message, 'warning'); }
+    finally { setInviteBusy(false); }
+  };
+  const respondToInvitation = async (invitation, action) => {
+    try {
+      await api(`/api/invitations/${invitation.id}/${action}`, { method: 'POST', body: JSON.stringify({}) });
+      const [{ projects }, { invitations: pendingInvites = [] }] = await Promise.all([api('/api/projects'), api('/api/invitations')]);
+      setProjectList(projects || []); setInvitations(pendingInvites);
+      if (action === 'accept') { startedRef.current = false; setProjectId(invitation.workspaceId); setMessages([]); setLastUsed([]); }
+    } catch (error) { notify(error.message, 'warning'); }
   };
   const createInvite = async () => {
     try { const result = await api(`/api/projects/${projectId}/invites`, { method: 'POST', body: JSON.stringify({}) }); setInviteUrl(result.url); setInviteExpiry(result.expiresAt); }
@@ -345,12 +371,13 @@ function App() {
     try { await api(`/api/projects/${projectId}/members/${member.id}`, { method: 'DELETE' }); await loadProjectDetails(); }
     catch (error) { notify(error.message, 'warning'); }
   };
-  const logout = async () => { await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); setUser(null); setProjectId(''); setProjectList([]); setUserMenu(false); };
+  const logout = async () => { await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); startedRef.current = false; setUser(null); setProjectId(''); setProjectList([]); setUserMenu(false); setMessages([]); };
 
   const joinInvite = async () => {
     try {
       const result = await api(`/api/invites/${encodeURIComponent(inviteToken)}/accept`, { method: 'POST', body: JSON.stringify({}) });
       const { projects } = await api('/api/projects');
+      startedRef.current = false;
       setProjectList(projects || []); setProjectId(result.project?.id || '');
       try { window.history.replaceState({}, '', '/'); } catch { /* Navigation can be restricted in embedded views. */ }
       setInviteToken(''); setInvitePreview(null); setInviteError('');
@@ -388,15 +415,17 @@ function App() {
     const nextId = `s_${crypto.randomUUID()}`;
     setSessionId(nextId);
     setMessages([]);
+    setDraft('');
     setLastUsed([]);
     setCheckIns([]);
     setSelectedId('');
     setTab('used');
-    if (fresh) notify('A fresh session is ready.', 'neutral');
+    setPageError('');
+    setBusy(false);
     try {
       const result = await api(projectPath(`/session/start?sessionId=${encodeURIComponent(nextId)}`));
       setCheckIns(result.checkIns || []);
-      setPageError('');
+      if (fresh) notify('A new workspace session is ready.', 'neutral');
     } catch (error) {
       setPageError(error.message);
     }
@@ -513,24 +542,25 @@ function App() {
   if (!user) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><p className="eyebrow">HINDSIGHT</p><h1>Hindsight</h1><div className="auth-tabs"><button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log in</button><button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setAuthError(''); }}>Sign up</button></div>{authMode === 'signup' && <label>Name<input type="text" value={login.name} onChange={(event) => setLogin({ ...login, name: event.target.value })} required /></label>}<label>Email<input type="email" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} required /></label><label>Password<input type="password" minLength={authMode === 'signup' ? 8 : undefined} value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} required /></label>{authError && <p className="auth-error">{authError}</p>}<button className="button button-primary" type="submit">{authMode === 'signup' ? 'Sign up' : 'Log in'}</button></form></main>;
   if (inviteToken && !invitePreview) return <main className="auth-screen"><section className="auth-card"><h1>Join project</h1><p>{inviteError || 'Loading invite…'}</p></section></main>;
   if (inviteToken && invitePreview) return <main className="auth-screen"><section className="auth-card"><h1>Join {invitePreview.project.name}, invited by {invitePreview.invitedBy}?</h1>{inviteError && <p className="auth-error">{inviteError}</p>}<button className="button button-primary" onClick={joinInvite}>Join</button></section></main>;
-  if (!projectId) return <main className="auth-screen"><form className="auth-card" onSubmit={createProject}><h1>New project</h1><label>Project name<input value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} required /></label><button className="button button-primary" type="submit">Create project</button></form></main>;
+  if (!projectId) return <main className="auth-screen"><form className="auth-card" onSubmit={createProject}><h1>Create a workspace</h1><p>Your personal workspace is ready to use. You can make another whenever you need one.</p><label>Workspace name<input placeholder="My workspace (optional)" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /></label><button className="button button-primary" type="submit">Create workspace</button></form></main>;
 
   return <div className={`app-shell moon-chat-shell is-new-session ${messages.length ? 'has-conversation' : ''}`}>
     <header className="topbar">
       <a className="brand" href="#" aria-label="Hindsight home"><span className="brand-mark"><Icon name="spark" size={18} /></span><span>hindsight</span></a>
-      <div className="project-switcher"><button className="quick-pill" aria-expanded={projectMenu} onClick={() => setProjectMenu((value) => !value)}>{projectList.find((project) => project.id === projectId)?.name}<span aria-hidden="true">⌄</span></button>{projectMenu && <div className="glass-menu">{projectList.map((project) => <button key={project.id} onClick={() => { startedRef.current = false; setProjectId(project.id); setMessages([]); setLastUsed([]); try { localStorage.setItem('hindsight:lastProject', project.id); } catch { /* Storage can be disabled. */ } setProjectMenu(false); }}><span>{project.name}</span><small>{project.role}</small></button>)}<form onSubmit={createProject}><input aria-label="New project name" placeholder="Project name" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /><button type="submit">New project</button></form></div>}</div>
+      <div className="project-switcher"><button className="quick-pill" aria-expanded={projectMenu} onClick={() => setProjectMenu((value) => !value)}>{projectList.find((project) => project.id === projectId)?.name}<span aria-hidden="true">⌄</span></button>{projectMenu && <div className="glass-menu">{projectList.map((project) => <button key={project.id} onClick={() => { startedRef.current = false; setProjectId(project.id); setMessages([]); setLastUsed([]); try { localStorage.setItem('hindsight:lastProject', project.id); } catch { /* Storage can be disabled. */ } setProjectMenu(false); }}><span>{project.name}</span><small>{project.role === 'owner' ? 'My workspace' : 'Shared workspace'}</small></button>)}<form onSubmit={createProject}><input aria-label="New workspace name" placeholder="Workspace name (optional)" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /><button type="submit">New workspace</button></form></div>}</div>
       <div className="topbar-actions">
         <button className="button button-memory" aria-pressed={mobilePanel} onClick={() => setMobilePanel((value) => !value)}><Icon name="book" size={15} /><span>Memory</span></button>
         <label className={`memory-toggle ${memoryEnabled ? 'enabled' : ''}`} title="Memory on or off"><span>Memory</span><input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} /><span className="toggle-track"><i /></span><b>{memoryEnabled ? 'On' : 'Off'}</b></label>
         <button className="quick-pill" onClick={() => startSession(true)}>New session</button>
+        {invitations.length > 0 && <button className="quick-pill" onClick={() => setInviteOpen(true)}>Invitations · {invitations.length}</button>}
         {projectList.find((project) => project.id === projectId)?.role === 'owner' && <button className="quick-pill" onClick={openInvites}>Invite</button>}
         <div className="user-menu-wrap"><button className="quick-pill" aria-expanded={userMenu} onClick={() => setUserMenu((value) => !value)}>{user.name}</button>{userMenu && <div className="glass-menu user-menu"><button onClick={logout}>Log out</button></div>}</div>
       </div>
     </header>
 
     <main className="workspace">
-      <section className={`chat-column ${mobilePanel ? 'mobile-hidden' : ''}`} aria-label="Project chat">
-        <div className="chat-heading"><div><p className="eyebrow">PROJECT CONVERSATION</p><h1>What are we working on?</h1><p className="heading-subtitle">A thinking partner that remembers the why.</p></div><button className="mobile-panel-button" onClick={() => setMobilePanel(true)}><Icon name="book" /> Memories</button></div>
+      <section className={`chat-column ${mobilePanel ? 'mobile-hidden' : ''}`} aria-label="Workspace chat">
+        <div className="chat-heading"><div><p className="eyebrow">WORKSPACE CONVERSATION</p><h1>What are we working on?</h1><p className="heading-subtitle">A thinking partner that remembers the why.</p></div><button className="mobile-panel-button" onClick={() => setMobilePanel(true)}><Icon name="book" /> Memories</button></div>
         {checkIns.length > 0 && <section className="checkins-section"><div className="section-kicker"><span className="pulse-dot" /> A few things to revisit <span className="checkin-count">{checkIns.length}</span></div>{checkIns.map(renderCheckIn)}</section>}
         {pageError && <div className="inline-error"><span>{pageError}</span><button className="text-button" onClick={() => startSession(false)}>Retry</button></div>}
         <div className={`chat-feed ${messages.length ? 'has-messages' : ''}`} ref={feedRef}>
@@ -551,7 +581,7 @@ function App() {
         </div>
         <form className="composer" onSubmit={sendMessage}>
           <textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.target.style.height = '48px'; event.target.style.height = `${Math.min(event.target.scrollHeight, 150)}px`; }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(event); } }} placeholder="Type your request..." rows={1} aria-label="Message Hindsight" />
-          <div className="composer-footer"><span><span className="composer-status" />{memoryEnabled ? 'Memory is on for this project' : 'Memory is off for this message'}</span><button className="send-button" disabled={!draft.trim() || busy} aria-label="Send message" type="submit"><Icon name="arrow" size={17} /></button></div>
+          <div className="composer-footer"><span><span className="composer-status" />{memoryEnabled ? 'Memory is on for this workspace' : 'Memory is off for this message'}</span><button className="send-button" disabled={!draft.trim() || busy} aria-label="Send message" type="submit"><Icon name="arrow" size={17} /></button></div>
         </form>
         {messages.length === 0 && <div className="quick-actions" aria-label="Quick prompts">
           {[
@@ -569,7 +599,7 @@ function App() {
       </section>
 
       <aside className={`memory-panel ${mobilePanel ? 'mobile-visible' : 'is-hidden'}`} aria-label="Project memory" aria-hidden={!mobilePanel}>
-        <div className="panel-topline"><div><p className="eyebrow">PROJECT CONTEXT</p><h2>Memory</h2></div><div className="memory-count"><strong>{allMemories.length}</strong><span>memories</span></div><button className="panel-close mobile-panel-button" aria-label="Close memory panel" onClick={() => setMobilePanel(false)}><Icon name="close" /></button></div>
+        <div className="panel-topline"><div><p className="eyebrow">WORKSPACE CONTEXT</p><h2>Memory</h2></div><div className="memory-count"><strong>{allMemories.length}</strong><span>memories</span></div><button className="panel-close mobile-panel-button" aria-label="Close memory panel" onClick={() => setMobilePanel(false)}><Icon name="close" /></button></div>
         <div className="panel-tabs" role="tablist" aria-label="Memory views">
           <button role="tab" aria-selected={tab === 'used'} className={tab === 'used' ? 'active' : ''} onClick={() => selectTab('used')}>Used in this reply</button>
           <button role="tab" aria-selected={tab === 'all'} className={tab === 'all' ? 'active' : ''} onClick={() => selectTab('all')}>All memories</button>
@@ -595,7 +625,13 @@ function App() {
         <div className="panel-footer"><span className="footer-lock">⌑</span><span>Project memory · QuickBite</span><span className="footer-sync"><i /> Synced</span></div>
       </aside>
     </main>
-    {inviteOpen && <div className="glass-backdrop" role="presentation" onClick={() => setInviteOpen(false)}><section className="invite-modal" role="dialog" aria-modal="true" aria-label="Project invites" onClick={(event) => event.stopPropagation()}><h2>Invite to {projectList.find((project) => project.id === projectId)?.name}</h2><button className="quick-pill" onClick={createInvite}>Create invite link</button>{inviteUrl && <div className="invite-link"><input readOnly value={inviteUrl} /><button className="quick-pill" onClick={() => navigator.clipboard?.writeText(inviteUrl)}>Copy</button><small>Expires {dateLabel(inviteExpiry)}</small></div>}<h3>Members</h3>{members.map((member) => <div className="member-row" key={member.id}><span>{member.name}</span><small>{member.role}</small>{projectList.find((project) => project.id === projectId)?.role === 'owner' && member.id !== user.id && <button className="quick-pill" onClick={() => removeMember(member)}>Remove</button>}</div>)}<button className="quick-pill" onClick={() => setInviteOpen(false)}>Close</button></section></div>}
+    {inviteOpen && <div className="glass-backdrop" role="presentation" onClick={() => setInviteOpen(false)}><section className="invite-modal" role="dialog" aria-modal="true" aria-label="Workspace invitations" onClick={(event) => event.stopPropagation()}>
+      {invitations.length > 0 && <><h2>Workspace invitations</h2>{invitations.map((invitation) => <div className="member-row" key={invitation.id}><span>{invitation.workspace}</span><small>from {invitation.invitedBy}</small><button className="quick-pill" onClick={() => respondToInvitation(invitation, 'accept')}>Accept</button><button className="quick-pill" onClick={() => respondToInvitation(invitation, 'decline')}>Decline</button></div>)}</>}
+      {projectList.find((project) => project.id === projectId)?.role === 'owner' && <><h2>Invite to {projectList.find((project) => project.id === projectId)?.name}</h2>
+      <form className="invite-user-form" onSubmit={inviteUser}><input aria-label="Username" placeholder="Username or email" value={inviteUsername} onChange={(event) => setInviteUsername(event.target.value)} /><button className="quick-pill" type="submit" disabled={inviteBusy}>{inviteBusy ? 'Sending…' : 'Invite member'}</button></form>
+      <button className="quick-pill" onClick={createInvite}>Create invite link</button>{inviteUrl && <div className="invite-link"><input readOnly value={inviteUrl} /><button className="quick-pill" onClick={() => navigator.clipboard?.writeText(inviteUrl)}>Copy</button><small>Expires {dateLabel(inviteExpiry)}</small></div>}</>}
+      <h3>Members</h3>{members.map((member) => <div className="member-row" key={member.id}><span>{member.name}</span><small>{member.role}</small>{projectList.find((project) => project.id === projectId)?.role === 'owner' && member.id !== user.id && <button className="quick-pill" onClick={() => removeMember(member)}>Remove</button>}</div>)}<button className="quick-pill" onClick={() => setInviteOpen(false)}>Close</button>
+    </section></div>}
     {toast && <div className={`toast toast-${toast.kind}`} role="status"><span className="toast-icon"><Icon name={toast.kind === 'warning' ? 'close' : 'check'} size={15} /></span>{toast.message}<button aria-label="Dismiss notification" onClick={() => setToast(null)}><Icon name="close" size={14} /></button></div>}
   </div>;
 }
