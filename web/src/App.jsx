@@ -445,7 +445,6 @@ function App() {
             ['spark', 'Image Assets', 'Help me plan image assets for this project.']
           ].map(([icon, label, prompt]) => <button key={label} type="button" onClick={() => { setDraft(prompt); inputRef.current?.focus(); }}><Icon name={icon} size={14} />{label}</button>)}
         </div>}
-        <p className="privacy-note"><Icon name="book" size={12} /> Your project context stays yours.</p>
       </section>
 
       <aside className={`memory-panel ${mobilePanel ? 'mobile-visible' : 'is-hidden'}`} aria-label="Project memory" aria-hidden={!mobilePanel}>
