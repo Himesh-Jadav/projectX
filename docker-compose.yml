@@ -1,0 +1,22 @@
+services:
+  hindsight:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hindsight:latest
+    container_name: hindsight-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:${PORT:-3001}"
+    env_file:
+      - .env
+    environment:
+      - PORT=${PORT:-3001}
+      - NODE_ENV=production
+      - AUTO_MIGRATE=true
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

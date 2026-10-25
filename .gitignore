@@ -1,4 +1,6 @@
 .env
+.env.local
 node_modules/
 npm-debug.log*
 bun.lock*
+.DS_Store

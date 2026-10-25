@@ -13,6 +13,7 @@
     "smoke": "node server/scripts/smoke.js",
     "verify:step1": "node server/scripts/demo-check.js",
     "demo:reset": "node server/scripts/reset.js",
+    "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "dev:web": "npm --prefix web run dev",
     "build:web": "npm --prefix web run build"
