@@ -22,6 +22,17 @@ The backend uses MongoDB. Configure a MongoDB connection string and a Gemini API
 - A reachable MongoDB database. The Compose file does not start a MongoDB container; it uses the external database specified by `MONGODB_URI`.
 - A Gemini API key in `GEMINI_API_KEYS` for memory embeddings.
 
+# Clone the project
+
+Clone the repository and open the project directory:
+
+```bash
+git clone <repository-url>
+cd <repository-directory>
+```
+
+Replace `<repository-url>` with the Git URL for this project and `<repository-directory>` with the folder created by `git clone`.
+
 ## Configure environment
 
 Copy `.env.example` to `.env`, then set at least:
@@ -108,3 +119,4 @@ Open [http://localhost:5173](http://localhost:5173). The API listens on port 300
 - If `/api/health` returns 503, check MongoDB connectivity, credentials, Atlas network access, and the database name.
 - If memory extraction or recall fails with Gemini 401 errors, replace `GEMINI_API_KEYS` with a valid Gemini API key, then recreate/restart the container.
 - If the container reports `exec ./docker-entrypoint.sh: no such file or directory`, make sure shell scripts use LF line endings, then rebuild with `docker compose up --build -d`. `.gitattributes` now enforces LF for `.sh` files.
+
