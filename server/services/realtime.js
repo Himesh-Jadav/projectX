@@ -147,7 +147,7 @@ export function attachProjectStream(req, res) {
   clients.add(res);
   const heartbeat = setInterval(() => { if (!res.destroyed) res.write(': heartbeat\n\n'); }, HEARTBEAT_MS);
   heartbeat.unref?.();
-  req.on('close', () => {
+  res.on('close', () => {
     clearInterval(heartbeat);
     clients.delete(res);
     if (!clients.size) clientsByProject.delete(projectId);

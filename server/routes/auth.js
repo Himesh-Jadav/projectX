@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
-import { connect, users } from '../db.js';
+import { connect, memberships, projects, users } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
@@ -56,6 +56,8 @@ router.post('/signup', async (req, res, next) => {
       throw error;
     }
     setSession(res, user);
+    const { insertedId: projectId } = await projects.insertOne({ name: `${user.name}'s workspace`, ownerId: user._id, createdAt: new Date() });
+    await memberships.insertOne({ projectId, userId: user._id, role: 'owner', joinedAt: new Date(), invitedBy: user._id });
     return res.status(201).json({ user: publicUser(user) });
   } catch (error) { return next(error); }
 });

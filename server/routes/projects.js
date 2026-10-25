@@ -31,7 +31,12 @@ async function projectMemberList(projectId) {
 router.get('/projects', requireAuth, async (req, res, next) => {
   try {
     await connect();
-    const rows = await memberships.find({ userId: req.user._id }).toArray();
+    let rows = await memberships.find({ userId: req.user._id }).toArray();
+    if (!rows.length) {
+      const { insertedId: projectId } = await projects.insertOne({ name: `${req.user.name}'s workspace`, ownerId: req.user._id, createdAt: new Date() });
+      await memberships.insertOne({ projectId, userId: req.user._id, role: 'owner', joinedAt: new Date(), invitedBy: req.user._id });
+      rows = [{ projectId, role: 'owner' }];
+    }
     const docs = await projects.find({ _id: { $in: rows.map((row) => row.projectId) } }).toArray();
     const roleByProject = new Map(rows.map((row) => [idString(row.projectId), row.role]));
     return res.json({ projects: docs.map((project) => ({ id: idString(project._id), name: project.name, role: roleByProject.get(idString(project._id)) })) });
@@ -40,8 +45,7 @@ router.get('/projects', requireAuth, async (req, res, next) => {
 
 router.post('/projects', requireAuth, async (req, res, next) => {
   try {
-    const name = req.body?.name;
-    if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'Project name is required.' });
+    const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim() : 'My workspace';
     await connect();
     const project = { name: name.trim(), ownerId: req.user._id, createdAt: new Date() };
     const { insertedId: projectId } = await projects.insertOne(project);
@@ -49,6 +53,53 @@ router.post('/projects', requireAuth, async (req, res, next) => {
     await memberships.insertOne(membership);
     await writeMemberEvent({ projectId, actor: req.user, event: 'member_joined', memberId: req.user._id });
     return res.status(201).json({ project: { id: idString(projectId), name: project.name, role: 'owner' } });
+  } catch (error) { return next(error); }
+});
+
+router.post('/projects/:projectId/invitations', requireAuth, requireProjectMember, requireOwner, async (req, res, next) => {
+  try {
+    const username = String(req.body?.username || '').trim();
+    if (!username) return res.status(400).json({ error: 'Enter a username or email.' });
+    await connect();
+    const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const target = await users.findOne({ $or: [{ email: username.toLowerCase() }, { name: { $regex: `^${escapedUsername}$`, $options: 'i' } }] });
+    if (!target) return res.status(404).json({ error: 'No account found for that username.' });
+    if (idString(target._id) === idString(req.user._id)) return res.status(400).json({ error: 'You are already a member of this workspace.' });
+    const projectId = new ObjectId(req.params.projectId);
+    if (await memberships.findOne({ projectId, userId: target._id })) return res.status(409).json({ error: 'That user is already a workspace member.' });
+    const existing = await invites.findOne({ kind: 'user', projectId, invitedUserId: target._id, status: 'pending' });
+    if (existing) return res.status(409).json({ error: 'An invitation is already pending for that user.' });
+    const project = await projects.findOne({ _id: projectId }, { projection: { name: 1 } });
+    const { insertedId } = await invites.insertOne({ kind: 'user', projectId, invitedUserId: target._id, invitedBy: req.user._id, status: 'pending', createdAt: new Date() });
+    return res.status(201).json({ invitation: { id: idString(insertedId), username: target.name, workspace: project?.name } });
+  } catch (error) { return next(error); }
+});
+
+router.get('/invitations', requireAuth, async (req, res, next) => {
+  try {
+    await connect();
+    const rows = await invites.find({ kind: 'user', invitedUserId: req.user._id, status: 'pending' }).sort({ createdAt: -1 }).toArray();
+    const invitations = await Promise.all(rows.map(async (row) => {
+      const [project, inviter] = await Promise.all([projects.findOne({ _id: row.projectId }, { projection: { name: 1 } }), users.findOne({ _id: row.invitedBy }, { projection: { name: 1 } })]);
+      return project ? { id: idString(row._id), workspaceId: idString(row.projectId), workspace: project.name, invitedBy: inviter?.name || 'A teammate' } : null;
+    }));
+    return res.json({ invitations: invitations.filter(Boolean) });
+  } catch (error) { return next(error); }
+});
+
+router.post('/invitations/:invitationId/:action', requireAuth, async (req, res, next) => {
+  try {
+    if (!ObjectId.isValid(req.params.invitationId) || !['accept', 'decline'].includes(req.params.action)) return res.status(404).json({ error: 'Invitation not found.' });
+    await connect();
+    const invitationId = new ObjectId(req.params.invitationId);
+    const invitation = await invites.findOne({ _id: invitationId, kind: 'user', invitedUserId: req.user._id, status: 'pending' });
+    if (!invitation) return res.status(404).json({ error: 'Invitation not found.' });
+    if (req.params.action === 'accept') {
+      await memberships.updateOne({ projectId: invitation.projectId, userId: req.user._id }, { $setOnInsert: { role: 'member', joinedAt: new Date(), invitedBy: invitation.invitedBy } }, { upsert: true });
+      await writeMemberEvent({ projectId: invitation.projectId, actor: req.user, event: 'member_joined', memberId: req.user._id });
+    }
+    await invites.updateOne({ _id: invitationId, status: 'pending' }, { $set: { status: req.params.action === 'accept' ? 'accepted' : 'declined', respondedAt: new Date() } });
+    return res.json({ ok: true, action: req.params.action, workspaceId: idString(invitation.projectId) });
   } catch (error) { return next(error); }
 });
 
