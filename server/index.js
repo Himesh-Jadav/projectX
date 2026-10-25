@@ -62,6 +62,6 @@ app.use((error, _req, res, _next) => {
 
 const port = Number(process.env.PORT || 3001);
 app.listen(port, () => {
-  console.log(`Hindsight API listening on http://localhost:${port}`);
+  console.log(`Smaran.ai API listening on http://localhost:${port}`);
   startRealtime();
 });

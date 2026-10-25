@@ -1660,3 +1660,43 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visi
 .theme-light .review-section > h3 {
   color: #1f2937;
 }
+
+/* Smaran.ai Logo Styles */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.brand-logo {
+  height: 32px;
+  width: auto;
+  max-width: 150px;
+  object-fit: contain;
+  display: block;
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+.brand:hover .brand-logo {
+  transform: scale(1.03);
+}
+.auth-logo-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.auth-logo {
+  height: 52px;
+  width: auto;
+  max-width: 220px;
+  object-fit: contain;
+  display: block;
+}
+.welcome-logo {
+  height: 60px;
+  width: auto;
+  max-width: 240px;
+  object-fit: contain;
+  margin: 0 auto 12px;
+  display: block;
+  filter: drop-shadow(0 4px 20px rgba(130, 160, 255, 0.25));
+}

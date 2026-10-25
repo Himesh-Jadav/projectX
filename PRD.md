@@ -1,4 +1,4 @@
-# Hindsight: PRD
+# Smaran.ai: PRD
 
 **A long-running decision assistant with persistent memory**
 MongoDB Student Hackathon · Track 1: Agentic Memory
@@ -8,7 +8,7 @@ Version 1.1 · 25 Oct 2026 · v1.0 core loop built; v1.1 adds team mode (login, 
 
 ## 1. One-line pitch
 
-Hindsight is a chat assistant for a long-running project. It quietly remembers the **decisions, assumptions, and constraints** you talk about, and uses them to push back, warn, and advise in later sessions. It also knows when a memory is wrong, replaced, or expired.
+Smaran.ai is a chat assistant for a long-running project. It quietly remembers the **decisions, assumptions, and constraints** you talk about, and uses them to push back, warn, and advise in later sessions. It also knows when a memory is wrong, replaced, or expired.
 
 **Team mode (v1.1):** a whole team shares one project memory. Every decision is stored with the name of the person who made it, and the assistant can point out when one person's idea conflicts with another person's earlier decision.
 
@@ -16,7 +16,7 @@ Hindsight is a chat assistant for a long-running project. It quietly remembers t
 
 On any long project, people forget *why* something was decided. Three months later someone proposes the opposite, nobody remembers the reasoning, and the same debate happens again. Normal chatbots make this worse because every new chat starts from zero.
 
-Hindsight fixes that. The assistant carries the project's reasoning forward and changes its answers because of it.
+Smaran.ai fixes that. The assistant carries the project's reasoning forward and changes its answers because of it.
 
 ## 3. Goals and non-goals
 

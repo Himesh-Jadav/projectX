@@ -43,7 +43,7 @@ async function completion(role, messages, json) {
           method: 'POST', signal: controller.signal,
           headers: {
             'content-type': 'application/json', authorization: `Bearer ${key}`,
-            ...(provider.name === 'openrouter' ? { 'HTTP-Referer': 'https://hindsight.local', 'X-Title': 'Hindsight' } : {})
+            ...(provider.name === 'openrouter' ? { 'HTTP-Referer': 'https://smaran.ai', 'X-Title': 'Smaran.ai' } : {})
           },
           body: JSON.stringify({
             model: provider.model, messages, temperature: 0.2,

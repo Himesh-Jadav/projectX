@@ -1,10 +1,10 @@
 services:
-  hindsight:
+  smaran-ai:
     build:
       context: .
       dockerfile: Dockerfile
-    image: hindsight:latest
-    container_name: hindsight-app
+    image: smaran-ai:latest
+    container_name: smaran-ai-app
     restart: unless-stopped
     ports:
       - "${PORT:-3001}:${PORT:-3001}"

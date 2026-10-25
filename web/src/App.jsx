@@ -575,15 +575,21 @@ function App() {
   );
 
   if (authPending) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}><p>Loading your project…</p></main>;
-  if (!user) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<form className="auth-card" onSubmit={signIn}><p className="eyebrow">HINDSIGHT</p><h1>Hindsight</h1><div className="auth-tabs"><button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log in</button><button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setAuthError(''); }}>Sign up</button></div>{authMode === 'signup' && <label>Name<input type="text" value={login.name} onChange={(event) => setLogin({ ...login, name: event.target.value })} required /></label>}<label>Email<input type="email" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} required /></label><label>Password<input type="password" minLength={authMode === 'signup' ? 8 : undefined} value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} required /></label>{authError && <p className="auth-error">{authError}</p>}<button className="button button-primary" type="submit">{authMode === 'signup' ? 'Sign up' : 'Log in'}</button></form></main>;
+  if (!user) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<form className="auth-card" onSubmit={signIn}><div className="auth-logo-wrap"><img src={theme === 'dark' ? '/dark_logo.png' : '/light_logo.png'} alt="Smaran.ai" className="auth-logo" /></div><p className="eyebrow">SMARAN.AI</p><h1>Smaran.ai</h1><div className="auth-tabs"><button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log in</button><button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setAuthError(''); }}>Sign up</button></div>{authMode === 'signup' && <label>Name<input type="text" value={login.name} onChange={(event) => setLogin({ ...login, name: event.target.value })} required /></label>}<label>Email<input type="email" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} required /></label><label>Password<input type="password" minLength={authMode === 'signup' ? 8 : undefined} value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} required /></label>{authError && <p className="auth-error">{authError}</p>}<button className="button button-primary" type="submit">{authMode === 'signup' ? 'Sign up' : 'Log in'}</button></form></main>;
   if (inviteToken && !invitePreview) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<section className="auth-card"><h1>Join project</h1><p>{inviteError || 'Loading invite…'}</p></section></main>;
   if (inviteToken && invitePreview) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<section className="auth-card"><h1>Join {invitePreview.project.name}, invited by {invitePreview.invitedBy}?</h1>{inviteError && <p className="auth-error">{inviteError}</p>}<button className="button button-primary" onClick={joinInvite}>Join</button></section></main>;
   if (!projectId) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<form className="auth-card" onSubmit={createProject}><h1>Create a workspace</h1><p>Your personal workspace is ready to use. You can make another whenever you need one.</p><label>Workspace name<input placeholder="My workspace (optional)" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /></label><button className="button button-primary" type="submit">Create workspace</button></form></main>;
 
   return <div className={`app-shell is-new-session ${theme === 'dark' ? 'moon-chat-shell theme-dark' : 'theme-light'} ${messages.length ? 'has-conversation' : ''}`}>
     <header className="topbar">
-      <a className="brand" href="#" aria-label="Hindsight home"><span className="brand-mark"><Icon name="spark" size={18} /></span><span>hindsight</span></a>
-      <div className="project-switcher"><button className="quick-pill" aria-expanded={projectMenu} onClick={() => setProjectMenu((value) => !value)}>{projectList.find((project) => project.id === projectId)?.name}<span aria-hidden="true">⌄</span></button>{projectMenu && <div className="glass-menu">{projectList.map((project) => <button key={project.id} onClick={() => { startedRef.current = false; setProjectId(project.id); setMessages([]); setLastUsed([]); try { localStorage.setItem('hindsight:lastProject', project.id); } catch { /* Storage can be disabled. */ } setProjectMenu(false); }}><span>{project.name}</span><small>{project.role === 'owner' ? 'My workspace' : 'Shared workspace'}</small></button>)}<form onSubmit={createProject}><input aria-label="New workspace name" placeholder="Workspace name (optional)" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /><button type="submit">New workspace</button></form></div>}</div>
+      <a className="brand" href="#" aria-label="Smaran.ai home">
+        <img
+          src={theme === 'dark' ? '/dark_logo.png' : '/light_logo.png'}
+          alt="Smaran.ai"
+          className="brand-logo"
+        />
+      </a>
+      <div className="project-switcher"><button className="quick-pill" aria-expanded={projectMenu} onClick={() => setProjectMenu((value) => !value)}>{projectList.find((project) => project.id === projectId)?.name}<span aria-hidden="true">⌄</span></button>{projectMenu && <div className="glass-menu">{projectList.map((project) => <button key={project.id} onClick={() => { startedRef.current = false; setProjectId(project.id); setMessages([]); setLastUsed([]); try { localStorage.setItem('hindsight:lastProject', project.id); localStorage.setItem('smaran:lastProject', project.id); } catch { /* Storage can be disabled. */ } setProjectMenu(false); }}><span>{project.name}</span><small>{project.role === 'owner' ? 'My workspace' : 'Shared workspace'}</small></button>)}<form onSubmit={createProject}><input aria-label="New workspace name" placeholder="Workspace name (optional)" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /><button type="submit">New workspace</button></form></div>}</div>
       <div className="topbar-actions">
         <button
           type="button"
@@ -610,7 +616,15 @@ function App() {
         {checkIns.length > 0 && <section className="checkins-section"><div className="section-kicker"><span className="pulse-dot" /> A few things to revisit <span className="checkin-count">{checkIns.length}</span></div>{checkIns.map(renderCheckIn)}</section>}
         {pageError && <div className="inline-error"><span>{pageError}</span><button className="text-button" onClick={() => startSession(false)}>Retry</button></div>}
         <div className={`chat-feed ${messages.length ? 'has-messages' : ''}`} ref={feedRef}>
-          {messages.length === 0 && <div className="welcome-block"><h2>Hindsight AI</h2><p>Build something meaningful — start with a thought, a decision, or a question.</p></div>}
+          {messages.length === 0 && <div className="welcome-block">
+            <img
+              src={theme === 'dark' ? '/dark_logo.png' : '/light_logo.png'}
+              alt="Smaran.ai"
+              className="welcome-logo"
+            />
+            <h2>Smaran.ai</h2>
+            <p>Build something meaningful — start with a thought, a decision, or a question.</p>
+          </div>}
           {messages.map((message) => <div className={`message-row ${message.role}`} key={message.localId}>
             {message.role === 'assistant' && <span className="assistant-avatar"><Icon name="spark" size={15} /></span>}
             <div className="message-content">
@@ -626,7 +640,7 @@ function App() {
           {busy && <div className="message-row assistant"><span className="assistant-avatar"><Icon name="spark" size={15} /></span><div className="thinking"><i /><i /><i /><span>Thinking with context</span></div></div>}
         </div>
         <form className="composer" onSubmit={sendMessage}>
-          <textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.target.style.height = '48px'; event.target.style.height = `${Math.min(event.target.scrollHeight, 150)}px`; }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(event); } }} placeholder="Type your request..." rows={1} aria-label="Message Hindsight" />
+          <textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.target.style.height = '48px'; event.target.style.height = `${Math.min(event.target.scrollHeight, 150)}px`; }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(event); } }} placeholder="Type your request..." rows={1} aria-label="Message Smaran.ai" />
           <div className="composer-footer"><span><span className="composer-status" />{memoryEnabled ? 'Memory is on for this workspace' : 'Memory is off for this message'}</span><button className="send-button" disabled={!draft.trim() || busy} aria-label="Send message" type="submit"><Icon name="arrow" size={17} /></button></div>
         </form>
         {messages.length === 0 && <div className="quick-actions" aria-label="Quick prompts">

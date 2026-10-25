@@ -1,6 +1,6 @@
-# Hindsight — Quick Start Guide
+# Smaran.ai — Quick Start Guide
 
-Hindsight keeps the decisions, assumptions, and context behind your project close at hand. It includes a celestial design system (dark/light themes), multi-author team collaboration, and real-time memory syncing over Server-Sent Events (SSE).
+Smaran.ai keeps the decisions, assumptions, and context behind your project close at hand. It includes a celestial design system (dark/light themes), multi-author team collaboration, and real-time memory syncing over Server-Sent Events (SSE).
 
 ---
 
@@ -18,30 +18,27 @@ Before running the project, make sure you have:
 
 ## ⚙️ Environment Setup
 
-1. Copy the example environment file:
-   ```bash
-   cp .env.example .env
-   ```
+A ready-to-run `.env` file is already included in the repository.
+If you wish to use your own MongoDB Atlas cluster or custom AI API keys, simply edit `.env`:
 
-2. Edit `.env` with your credentials:
-   ```env
-   # Database Connection
-   MONGODB_URI=mongodb+srv://<username>:<password>@<cluster-host>
-   DB_NAME=hindsight
+```env
+# Database Connection
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster-host>
+DB_NAME=hindsight
 
-   # Security & Auth
-   JWT_SECRET=your-random-secret-key-at-least-32-characters-long
-   DEMO_PASSWORD=your-secure-demo-password
+# Security & Auth
+JWT_SECRET=your-random-secret-key-at-least-32-characters-long
+DEMO_PASSWORD=your-secure-demo-password
 
-   # AI Provider Keys (at least one is required)
-   GEMINI_API_KEYS=your-gemini-api-key
-   GROQ_API_KEYS=
-   OPENROUTER_API_KEYS=
+# AI Provider Keys (at least one is required)
+GEMINI_API_KEYS=your-gemini-api-key
+GROQ_API_KEYS=
+OPENROUTER_API_KEYS=
 
-   # App Settings
-   PORT=3001
-   APP_URL=http://localhost:3001
-   ```
+# App Settings
+PORT=3001
+APP_URL=http://localhost:3001
+```
 
 ---
 
@@ -57,14 +54,14 @@ docker compose up --build
 ### Or Using Standard Docker CLI:
 ```bash
 # 1. Build the image
-docker build -t hindsight .
+docker build -t smaran-ai .
 
 # 2. Run the container
 docker run -d \
-  --name hindsight-app \
+  --name smaran-ai-app \
   -p 3001:3001 \
   --env-file .env \
-  hindsight
+  smaran-ai
 ```
 
 ### Accessing the App:
