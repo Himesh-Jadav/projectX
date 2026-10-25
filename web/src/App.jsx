@@ -165,7 +165,7 @@ function Icon({ name, size = 16 }) {
   return <svg {...common}>{paths[name] || paths.spark}</svg>;
 }
 
-function MemoryCard({ memory, used, score, why, selected, onSelect, onDelete, onInvalidate, onResolve, onConfirm, compact = false }) {
+function MemoryCard({ memory, used, score, why, selected, onSelect, onDelete, onInvalidate, onResolve, onWithdraw, onConfirm, compact = false }) {
   const [quoteOpen, setQuoteOpen] = useState(false);
   const percent = Math.max(0, Math.min(100, Math.round((score ?? 0) * 100)));
   return <article className={`memory-card ${selected ? 'is-selected' : ''} ${compact ? 'compact' : ''}`} onClick={() => onSelect?.(memory)}>
@@ -175,6 +175,7 @@ function MemoryCard({ memory, used, score, why, selected, onSelect, onDelete, on
       <span className="memory-date">{dateLabel(memory.createdAt)}</span>
     </div>
     <h3>{memory.content}</h3>
+    {memory.createdByName && <p className="memory-reason">By {memory.createdByName}</p>}
     {memory.reason && <p className="memory-reason">{memory.reason}</p>}
     {used && <div className="score-block">
       <div className="score-label"><span>Match strength</span><strong>{percent}%</strong></div>
@@ -188,10 +189,7 @@ function MemoryCard({ memory, used, score, why, selected, onSelect, onDelete, on
       {quoteOpen && <blockquote>“{memory.source.quote}”</blockquote>}
     </div>}
     {!compact && <div className="memory-actions" onClick={(event) => event.stopPropagation()}>
-      {memory.status === 'pending' ? <>
-        <button className="button button-primary button-small" onClick={() => onResolve?.(memory, 'override')}>Override</button>
-        <button className="button button-quiet button-small" onClick={() => onResolve?.(memory, 'keep')}>Keep current</button>
-      </> : <>
+      {memory.status === 'pending' ? <>{onResolve && <><button className="button button-primary button-small" onClick={() => onResolve(memory, 'override')}>Override</button><button className="button button-quiet button-small" onClick={() => onResolve(memory, 'keep')}>Keep current</button></>}{onWithdraw && <button className="button button-quiet button-small" onClick={() => onWithdraw(memory)}>Withdraw</button>}{!onResolve && !onWithdraw && <span>Waiting for review</span>}</> : <>
         {memory.status === 'active' && <button className="button button-quiet button-small" onClick={() => onInvalidate?.(memory)}><Icon name="close" size={14} /> Invalidate</button>}
         <button className="icon-button danger-hover" title="Delete memory" aria-label="Delete memory" onClick={() => onDelete?.(memory)}><Icon name="trash" /></button>
       </>}
@@ -199,7 +197,7 @@ function MemoryCard({ memory, used, score, why, selected, onSelect, onDelete, on
   </article>;
 }
 
-function ConflictCard({ conflict, onResolve, busy }) {
+function ConflictCard({ conflict, onResolve, onWithdraw, canResolve, busy }) {
   const pending = conflict.pending;
   const target = conflict.target;
   return <section className="conflict-card">
@@ -209,13 +207,20 @@ function ConflictCard({ conflict, onResolve, busy }) {
       <div><span className="compare-label">NEW</span><p>{pending?.content}</p>{pending?.reason && <small>{pending.reason}</small>}</div>
     </div>
     <div className="conflict-actions">
-      <button className="button button-primary button-small" disabled={busy} onClick={() => onResolve(pending, 'override')}>Override decision</button>
-      <button className="button button-quiet button-small" disabled={busy} onClick={() => onResolve(pending, 'keep')}>Keep current</button>
+      {canResolve ? <><button className="button button-primary button-small" disabled={busy} onClick={() => onResolve(pending, 'override')}>Override decision</button><button className="button button-quiet button-small" disabled={busy} onClick={() => onResolve(pending, 'keep')}>Keep current</button></> : <span>Waiting for {conflict.targetAuthorName || target?.createdByName || 'the author'} to review</span>}
+      {pending?.userId === conflict.viewerId && <button className="button button-quiet button-small" disabled={busy} onClick={() => onWithdraw(pending)}>Withdraw</button>}
     </div>
   </section>;
 }
 
 function App() {
+  const [user, setUser] = useState(null);
+  const [projectId, setProjectId] = useState('');
+  const [projectList, setProjectList] = useState([]);
+  const [authPending, setAuthPending] = useState(true);
+  const [authError, setAuthError] = useState('');
+  const [login, setLogin] = useState({ email: 'alice@quickbite.demo', password: '' });
+  const projectPath = useCallback((path) => `/api/projects/${projectId}${path}`, [projectId]);
   const [sessionId, setSessionId] = useState(() => `s_${crypto.randomUUID()}`);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
@@ -223,6 +228,7 @@ function App() {
   const [tab, setTab] = useState('used');
   const [lastUsed, setLastUsed] = useState([]);
   const [allMemories, setAllMemories] = useState([]);
+  const [needsReview, setNeedsReview] = useState([]);
   const [checkIns, setCheckIns] = useState([]);
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -238,6 +244,31 @@ function App() {
   const toastTimer = useRef(null);
   const startedRef = useRef(false);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const { user: currentUser } = await api('/api/auth/me');
+        const { projects } = await api('/api/projects');
+        setUser(currentUser);
+        setProjectList(projects || []);
+        setProjectId(projects?.[0]?.id || '');
+      } catch { /* The sign-in form is shown when there is no valid session cookie. */ }
+      finally { setAuthPending(false); }
+    })();
+  }, []);
+
+  const signIn = async (event) => {
+    event.preventDefault();
+    setAuthError('');
+    try {
+      const { user: currentUser } = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(login) });
+      const { projects } = await api('/api/projects');
+      setUser(currentUser);
+      setProjectList(projects || []);
+      setProjectId(projects?.[0]?.id || '');
+    } catch (error) { setAuthError(error.message); }
+  };
+
   const notify = useCallback((message, kind = 'success') => {
     setToast({ message, kind });
     clearTimeout(toastTimer.current);
@@ -248,9 +279,11 @@ function App() {
     const params = new URLSearchParams();
     if (typeFilter !== 'all') params.set('type', typeFilter);
     if (statusFilter !== 'all') params.set('status', statusFilter);
-    const result = await api(`/api/memories${params.size ? `?${params}` : ''}`);
+    if (!projectId) return;
+    const result = await api(projectPath(`/memories${params.size ? `?${params}` : ''}`));
     setAllMemories(result.memories || []);
-  }, [typeFilter, statusFilter]);
+    setNeedsReview(result.needsReview || []);
+  }, [typeFilter, statusFilter, projectId, projectPath]);
 
   const startSession = useCallback(async (fresh = false) => {
     const nextId = `s_${crypto.randomUUID()}`;
@@ -262,22 +295,22 @@ function App() {
     setTab('used');
     if (fresh) notify('A fresh session is ready.', 'neutral');
     try {
-      const result = await api(`/api/session/start?sessionId=${encodeURIComponent(nextId)}`);
+      const result = await api(projectPath(`/session/start?sessionId=${encodeURIComponent(nextId)}`));
       setCheckIns(result.checkIns || []);
       setPageError('');
     } catch (error) {
       setPageError(error.message);
     }
-  }, [notify]);
+  }, [notify, projectPath]);
 
   useEffect(() => {
-    if (startedRef.current) return;
+    if (startedRef.current || !projectId) return;
     startedRef.current = true;
     startSession(false);
-  }, []);
+  }, [projectId, startSession]);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
   useEffect(() => { feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' }); }, [messages, busy]);
-  useEffect(() => { refreshMemories().catch(() => {}); }, [refreshMemories]);
+  useEffect(() => { if (projectId) refreshMemories().catch(() => {}); }, [refreshMemories, projectId]);
 
   const sendMessage = async (event) => {
     event?.preventDefault();
@@ -288,7 +321,7 @@ function App() {
     setMessages((items) => [...items, { role: 'user', text, localId: crypto.randomUUID() }]);
     setBusy(true);
     try {
-      const result = await api('/api/chat', { method: 'POST', body: JSON.stringify({ sessionId, message: text, memoryEnabled }) });
+      const result = await api(projectPath('/chat'), { method: 'POST', body: JSON.stringify({ sessionId, message: text, memoryEnabled }) });
       setMessages((items) => [...items, { role: 'assistant', text: responseText(result.reply), used: result.used || [], changes: result.changes || [], conflicts: result.conflicts || [], notices: result.notices || [], localId: crypto.randomUUID() }]);
       setLastUsed(result.used || []);
       const savedCount = (result.changes || []).filter((change) => change.kind === 'created').length;
@@ -308,7 +341,7 @@ function App() {
     if (!memory?._id) return;
     setBusy(true);
     try {
-      await api(`/api/memories/${idOf(memory)}/resolve`, { method: 'POST', body: JSON.stringify({ action }) });
+      await api(projectPath(`/memories/${idOf(memory)}/resolve`), { method: 'POST', body: JSON.stringify({ action }) });
       setMessages((items) => items.map((message) => ({ ...message, conflicts: (message.conflicts || []).filter(({ pending }) => idOf(pending) !== idOf(memory)) })));
       notify(action === 'override' ? 'Decision updated. The previous choice is in the timeline.' : 'Kept the current decision.');
       await refreshMemories();
@@ -317,12 +350,22 @@ function App() {
     finally { setBusy(false); }
   };
 
+  const withdrawConflict = async (memory) => {
+    if (!memory?._id) return;
+    try {
+      await api(projectPath(`/memories/${idOf(memory)}/withdraw`), { method: 'POST', body: JSON.stringify({}) });
+      setMessages((items) => items.map((message) => ({ ...message, conflicts: (message.conflicts || []).filter(({ pending }) => idOf(pending) !== idOf(memory)) })));
+      notify('Your pending memory was withdrawn.', 'neutral');
+      await refreshMemories();
+    } catch (error) { notify(error.message, 'warning'); }
+  };
+
   const mutateMemory = async (memory, action) => {
     if (!memory?._id) return;
     try {
-      if (action === 'delete') await api(`/api/memories/${idOf(memory)}`, { method: 'DELETE' });
-      if (action === 'invalidate') await api(`/api/memories/${idOf(memory)}/invalidate`, { method: 'POST', body: JSON.stringify({ reason: 'Marked no longer true from the memory panel.' }) });
-      if (action === 'confirm') await api(`/api/memories/${idOf(memory)}/confirm`, { method: 'POST', body: JSON.stringify({}) });
+      if (action === 'delete') await api(projectPath(`/memories/${idOf(memory)}`), { method: 'DELETE' });
+      if (action === 'invalidate') await api(projectPath(`/memories/${idOf(memory)}/invalidate`), { method: 'POST', body: JSON.stringify({ reason: 'Marked no longer true from the memory panel.' }) });
+      if (action === 'confirm') await api(projectPath(`/memories/${idOf(memory)}/confirm`), { method: 'POST', body: JSON.stringify({}) });
       setCheckIns((items) => items.filter((item) => idOf(item.memory) !== idOf(memory)));
       notify(action === 'delete' ? 'Memory permanently deleted.' : action === 'confirm' ? 'Assumption confirmed.' : 'Memory invalidated.');
       await refreshMemories();
@@ -332,10 +375,10 @@ function App() {
   const loadTimeline = async () => {
     setTimelineLoading(true);
     try {
-      const response = await api('/api/memories?status=superseded');
+      const response = await api(projectPath('/memories?status=superseded'));
       const old = response.memories || [];
       const chains = await Promise.all(old.map(async (memory) => {
-        try { return (await api(`/api/memories/${idOf(memory)}/chain`)).chain || [memory]; }
+        try { return (await api(projectPath(`/memories/${idOf(memory)}/chain`))).chain || [memory]; }
         catch { return [memory]; }
       }));
       const unique = new Map();
@@ -364,10 +407,14 @@ function App() {
     <div className="checkin-actions"><button className="button button-quiet button-small" onClick={() => mutateMemory(item.memory, 'invalidate')}>No longer true</button><button className="icon-button" aria-label="Confirm memory" title="Confirm" onClick={() => mutateMemory(item.memory, 'confirm')}><Icon name="check" /></button></div>
   </div>;
 
+  if (authPending) return <main className="auth-screen"><p>Loading your project…</p></main>;
+  if (!user) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><span className="brand-mark"><Icon name="spark" size={18} /></span><p className="eyebrow">HINDSIGHT</p><h1>Sign in</h1><p>Use your project account to continue.</p><label>Email<input type="email" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} required /></label><label>Password<input type="password" value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} required /></label>{authError && <p className="inline-error">{authError}</p>}<button className="button button-primary" type="submit">Sign in</button></form></main>;
+  if (!projectId) return <main className="auth-screen"><section className="auth-card"><h1>No project yet</h1><p>Create a project through the API or sign in with a seeded account.</p></section></main>;
+
   return <div className={`app-shell moon-chat-shell is-new-session ${messages.length ? 'has-conversation' : ''}`}>
     <header className="topbar">
       <a className="brand" href="#" aria-label="Hindsight home"><span className="brand-mark"><Icon name="spark" size={18} /></span><span>hindsight</span></a>
-      <div className="project-indicator"><span className="project-avatar">Q</span><div><small>YOUR PROJECT</small><strong>QuickBite</strong></div><span className="project-chevron">⌄</span></div>
+      <label className="project-indicator"><span className="project-avatar">{(projectList.find((project) => project.id === projectId)?.name || 'P').slice(0, 1)}</span><div><small>YOUR PROJECT</small><select aria-label="Project" value={projectId} onChange={(event) => { startedRef.current = false; setProjectId(event.target.value); setMessages([]); setLastUsed([]); }} >{projectList.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></div></label>
       <div className="topbar-actions">
         <button className="button button-memory" aria-pressed={mobilePanel} onClick={() => setMobilePanel((value) => !value)}><Icon name="book" size={15} /><span>Memory</span></button>
         <label className={`memory-toggle ${memoryEnabled ? 'enabled' : ''}`} title="Memory on or off"><span>Memory</span><input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} /><span className="toggle-track"><i /></span><b>{memoryEnabled ? 'On' : 'Off'}</b></label>
@@ -390,7 +437,7 @@ function App() {
                 {!!message.used?.length && <div className="memory-chips"><span>Remembered</span>{message.used.map(({ memory }) => <button key={idOf(memory)} className="memory-chip" onClick={() => showMemory(memory)} title={memory.content}><span className="chip-mark">↗</span>{memory.content}</button>)}</div>}
                 {!!message.changes?.filter((change) => change.kind === 'created').length && <div className="saved-inline"><span className="saved-check"><Icon name="check" size={12} /></span>{message.changes.filter((change) => change.kind === 'created').length} new {message.changes.filter((change) => change.kind === 'created').length === 1 ? 'memory' : 'memories'} saved</div>}
                 {(message.notices || []).filter((notice) => !notice.toLowerCase().includes('not saved: looks like a secret')).map((notice, i) => <div className="message-notice" key={i}>{notice}</div>)}
-                {!!message.conflicts?.length && <div className="conflict-stack">{message.conflicts.map((conflict) => <ConflictCard key={idOf(conflict.pending)} conflict={conflict} onResolve={resolveConflict} busy={busy} />)}</div>}
+                {!!message.conflicts?.length && <div className="conflict-stack">{message.conflicts.map((conflict) => <ConflictCard key={idOf(conflict.pending)} conflict={{ ...conflict, viewerId: user.id }} canResolve={conflict.target?.userId === user.id || projectList.find((project) => project.id === projectId)?.role === 'owner'} onResolve={resolveConflict} onWithdraw={withdrawConflict} busy={busy} />)}</div>}
               </>}
             </div>
           </div>)}
@@ -429,7 +476,7 @@ function App() {
           </>}
           {tab === 'all' && <>
             <div className="filter-row"><label><span className="sr-only">Filter by type</span><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">All types</option><option value="decision">Decisions</option><option value="assumption">Assumptions</option><option value="constraint">Constraints</option><option value="outcome">Outcomes</option></select></label><label><span className="sr-only">Filter by status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="active">Active</option><option value="pending">Pending</option><option value="superseded">Superseded</option><option value="invalid">Invalid</option></select></label></div>
-            {allMemories.length ? allMemories.map((memory) => <MemoryCard key={idOf(memory)} memory={memory} selected={selectedId === idOf(memory)} onSelect={showMemory} onResolve={resolveConflict} onInvalidate={(item) => mutateMemory(item, 'invalidate')} onDelete={(item) => mutateMemory(item, 'delete')} />) : <div className="panel-empty small-empty"><span className="empty-illustration"><Icon name="book" size={20} /></span><h3>Nothing here yet</h3><p>Decisions and useful context will appear here as you talk.</p></div>}
+            {allMemories.length ? allMemories.map((memory) => <MemoryCard key={idOf(memory)} memory={memory} selected={selectedId === idOf(memory)} onSelect={showMemory} onResolve={memory.status === 'pending' && needsReview.some((item) => idOf(item) === idOf(memory)) ? resolveConflict : undefined} onWithdraw={memory.status === 'pending' && memory.userId === user.id ? withdrawConflict : undefined} onInvalidate={(item) => mutateMemory(item, 'invalidate')} onDelete={(item) => mutateMemory(item, 'delete')} />) : <div className="panel-empty small-empty"><span className="empty-illustration"><Icon name="book" size={20} /></span><h3>Nothing here yet</h3><p>Decisions and useful context will appear here as you talk.</p></div>}
           </>}
           {tab === 'timeline' && <>
             <div className="panel-intro"><Icon name="clock" size={15} /> Follow how project decisions have changed.</div>
