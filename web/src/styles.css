@@ -1509,3 +1509,137 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visi
 .moon-chat-shell .panel-tabs { grid-template-columns: repeat(4,1fr); }
 @media (max-width: 800px) { .is-new-session .topbar { gap: 8px; } .quick-pill { min-height: 34px; padding: 0 9px; font-size: 10px; } }
 @media (max-width: 520px) { .project-switcher { display: block; } .project-switcher .quick-pill { max-width: 120px; overflow: hidden; } .topbar-actions { gap: 5px; } .is-new-session .button-new { padding: 0; } .is-new-session .panel-tabs { grid-template-columns: repeat(4,minmax(0,1fr)); } }
+
+/* Auth Screen Theme Support & Toggle */
+.auth-theme-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 20;
+}
+.auth-screen.theme-light {
+  color: #1a1f2c;
+  background: #f6f8fa;
+  position: relative;
+  overflow: hidden;
+}
+.auth-screen.theme-light::before {
+  content: "";
+  position: fixed;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  width: min(1500px, 140vw);
+  height: min(900px, 95vh);
+  border-radius: 50% 50% 45% 45% / 70% 70% 30% 30%;
+  background:
+    radial-gradient(ellipse 90% 65% at 50% 12%, rgba(255, 255, 255, 0.95) 0%, rgba(230, 240, 255, 0.75) 25%, rgba(186, 214, 255, 0.5) 50%, rgba(140, 185, 255, 0.22) 75%, transparent 100%),
+    radial-gradient(circle at 50% 0%, rgba(99, 140, 255, 0.35) 0%, rgba(130, 175, 255, 0.2) 40%, transparent 70%);
+  box-shadow:
+    0 -20px 80px rgba(120, 170, 255, 0.45),
+    0 -60px 140px rgba(90, 145, 255, 0.3),
+    inset 0 12px 30px rgba(255, 255, 255, 0.9);
+  filter: blur(28px) saturate(1.3);
+  pointer-events: none;
+  z-index: 0;
+}
+.auth-screen.theme-light .auth-card {
+  color: #1a1f2c;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 18px 50px rgba(30, 50, 90, 0.1);
+  backdrop-filter: blur(22px);
+  position: relative;
+  z-index: 1;
+}
+.auth-screen.theme-light .auth-card .eyebrow,
+.auth-screen.theme-light .auth-card > p {
+  color: #5a6474;
+}
+.auth-screen.theme-light .auth-card label {
+  color: #2b313d;
+}
+.auth-screen.theme-light .auth-card input {
+  color: #1a1f2c;
+  border-color: rgba(0, 0, 0, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+}
+.auth-screen.theme-light .auth-tabs {
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+.auth-screen.theme-light .auth-tabs button {
+  color: #64748b;
+}
+.auth-screen.theme-light .auth-tabs button.active {
+  border-bottom-color: #2563eb;
+  color: #0f172a;
+}
+
+/* Light Mode Team Controls */
+.theme-light .quick-pill {
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #374151;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.theme-light .quick-pill:hover {
+  border-color: rgba(0, 0, 0, 0.22);
+  color: #111827;
+  background: #ffffff;
+}
+.theme-light .glass-menu {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+}
+.theme-light .glass-menu > button:hover,
+.theme-light .glass-menu form button:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+.theme-light .glass-menu small {
+  color: #6b7280;
+}
+.theme-light .glass-menu form {
+  border-top-color: rgba(0, 0, 0, 0.08);
+}
+.theme-light .glass-menu input,
+.theme-light .invite-link input {
+  color: #1f2937;
+  border-color: rgba(0, 0, 0, 0.14);
+  background: rgba(245, 247, 250, 0.9);
+}
+.theme-light .invite-modal {
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.15);
+}
+.theme-light .invite-modal h3 {
+  border-top-color: rgba(0, 0, 0, 0.08);
+}
+.theme-light .invite-link small {
+  color: #6b7280;
+}
+.theme-light .member-row {
+  color: #374151;
+}
+.theme-light .member-row small {
+  color: #6b7280;
+}
+.theme-light .activity-row {
+  color: #374151;
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+.theme-light .activity-row > span {
+  color: #111827;
+}
+.theme-light .activity-row small {
+  color: #6b7280;
+}
+.theme-light .memory-author {
+  color: #6b7280;
+}
+.theme-light .review-section > h3 {
+  color: #1f2937;
+}
