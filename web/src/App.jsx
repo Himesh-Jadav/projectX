@@ -182,7 +182,9 @@ function Icon({ name, size = 16 }) {
     check: <><path d="m5 12 4 4L19 6" /></>,
     close: <><path d="m6 6 12 12M18 6 6 18" /></>,
     book: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" /><path d="M4 5.5v16M8 7h8M8 11h8" /></>,
-    quote: <><path d="M10 11H5V6h5v5Zm9 0h-5V6h5v5ZM5 11c0 4 1.5 6 4 7m5-7c0 4 1.5 6 4 7" /></>
+    quote: <><path d="M10 11H5V6h5v5Zm9 0h-5V6h5v5ZM5 11c0 4 1.5 6 4 7m5-7c0 4 1.5 6 4 7" /></>,
+    sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></>,
+    moon: <><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></>
   };
   return <svg {...common}>{paths[name] || paths.spark}</svg>;
 }
@@ -276,10 +278,31 @@ function App() {
   const [timeline, setTimeline] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [mobilePanel, setMobilePanel] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 801px)').matches);
+  const [theme, setTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('hindsight-theme');
+      if (stored === 'light' || stored === 'dark') return stored;
+    }
+    return 'dark';
+  });
   const inputRef = useRef(null);
   const feedRef = useRef(null);
   const toastTimer = useRef(null);
   const startedRef = useRef(false);
+
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem('hindsight-theme', next); } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+  }, [theme]);
 
   useEffect(() => {
     (async () => {
@@ -538,17 +561,48 @@ function App() {
     <div className="checkin-actions"><button className="button button-quiet button-small" onClick={() => mutateMemory(item.memory, 'invalidate')}>No longer true</button><button className="icon-button" aria-label="Confirm memory" title="Confirm" onClick={() => mutateMemory(item.memory, 'confirm')}><Icon name="check" /></button></div>
   </div>;
 
+<<<<<<< HEAD
   if (authPending) return <main className="auth-screen"><p>Loading your project…</p></main>;
   if (!user) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><p className="eyebrow">HINDSIGHT</p><h1>Hindsight</h1><div className="auth-tabs"><button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log in</button><button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setAuthError(''); }}>Sign up</button></div>{authMode === 'signup' && <label>Name<input type="text" value={login.name} onChange={(event) => setLogin({ ...login, name: event.target.value })} required /></label>}<label>Email<input type="email" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} required /></label><label>Password<input type="password" minLength={authMode === 'signup' ? 8 : undefined} value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} required /></label>{authError && <p className="auth-error">{authError}</p>}<button className="button button-primary" type="submit">{authMode === 'signup' ? 'Sign up' : 'Log in'}</button></form></main>;
   if (inviteToken && !invitePreview) return <main className="auth-screen"><section className="auth-card"><h1>Join project</h1><p>{inviteError || 'Loading invite…'}</p></section></main>;
   if (inviteToken && invitePreview) return <main className="auth-screen"><section className="auth-card"><h1>Join {invitePreview.project.name}, invited by {invitePreview.invitedBy}?</h1>{inviteError && <p className="auth-error">{inviteError}</p>}<button className="button button-primary" onClick={joinInvite}>Join</button></section></main>;
   if (!projectId) return <main className="auth-screen"><form className="auth-card" onSubmit={createProject}><h1>Create a workspace</h1><p>Your personal workspace is ready to use. You can make another whenever you need one.</p><label>Workspace name<input placeholder="My workspace (optional)" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /></label><button className="button button-primary" type="submit">Create workspace</button></form></main>;
+=======
+  const authThemeButton = (
+    <button
+      type="button"
+      className="button button-theme auth-theme-toggle"
+      onClick={toggleTheme}
+      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+    >
+      <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
+      <span className="theme-toggle-label">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+    </button>
+  );
+>>>>>>> 90391da113b80c0abd4d0f73fec4ae2914c37ebc
 
-  return <div className={`app-shell moon-chat-shell is-new-session ${messages.length ? 'has-conversation' : ''}`}>
+  if (authPending) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}><p>Loading your project…</p></main>;
+  if (!user) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<form className="auth-card" onSubmit={signIn}><p className="eyebrow">HINDSIGHT</p><h1>Hindsight</h1><div className="auth-tabs"><button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log in</button><button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setAuthError(''); }}>Sign up</button></div>{authMode === 'signup' && <label>Name<input type="text" value={login.name} onChange={(event) => setLogin({ ...login, name: event.target.value })} required /></label>}<label>Email<input type="email" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} required /></label><label>Password<input type="password" minLength={authMode === 'signup' ? 8 : undefined} value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} required /></label>{authError && <p className="auth-error">{authError}</p>}<button className="button button-primary" type="submit">{authMode === 'signup' ? 'Sign up' : 'Log in'}</button></form></main>;
+  if (inviteToken && !invitePreview) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<section className="auth-card"><h1>Join project</h1><p>{inviteError || 'Loading invite…'}</p></section></main>;
+  if (inviteToken && invitePreview) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<section className="auth-card"><h1>Join {invitePreview.project.name}, invited by {invitePreview.invitedBy}?</h1>{inviteError && <p className="auth-error">{inviteError}</p>}<button className="button button-primary" onClick={joinInvite}>Join</button></section></main>;
+  if (!projectId) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<form className="auth-card" onSubmit={createProject}><h1>New project</h1><label>Project name<input value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} required /></label><button className="button button-primary" type="submit">Create project</button></form></main>;
+
+  return <div className={`app-shell is-new-session ${theme === 'dark' ? 'moon-chat-shell theme-dark' : 'theme-light'} ${messages.length ? 'has-conversation' : ''}`}>
     <header className="topbar">
       <a className="brand" href="#" aria-label="Hindsight home"><span className="brand-mark"><Icon name="spark" size={18} /></span><span>hindsight</span></a>
       <div className="project-switcher"><button className="quick-pill" aria-expanded={projectMenu} onClick={() => setProjectMenu((value) => !value)}>{projectList.find((project) => project.id === projectId)?.name}<span aria-hidden="true">⌄</span></button>{projectMenu && <div className="glass-menu">{projectList.map((project) => <button key={project.id} onClick={() => { startedRef.current = false; setProjectId(project.id); setMessages([]); setLastUsed([]); try { localStorage.setItem('hindsight:lastProject', project.id); } catch { /* Storage can be disabled. */ } setProjectMenu(false); }}><span>{project.name}</span><small>{project.role === 'owner' ? 'My workspace' : 'Shared workspace'}</small></button>)}<form onSubmit={createProject}><input aria-label="New workspace name" placeholder="Workspace name (optional)" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /><button type="submit">New workspace</button></form></div>}</div>
       <div className="topbar-actions">
+        <button
+          type="button"
+          className="button button-theme"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
+          <span className="theme-toggle-label">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+        </button>
         <button className="button button-memory" aria-pressed={mobilePanel} onClick={() => setMobilePanel((value) => !value)}><Icon name="book" size={15} /><span>Memory</span></button>
         <label className={`memory-toggle ${memoryEnabled ? 'enabled' : ''}`} title="Memory on or off"><span>Memory</span><input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} /><span className="toggle-track"><i /></span><b>{memoryEnabled ? 'On' : 'Off'}</b></label>
         <button className="quick-pill" onClick={() => startSession(true)}>New session</button>
@@ -595,7 +649,6 @@ function App() {
             ['spark', 'Image Assets', 'Help me plan image assets for this project.']
           ].map(([icon, label, prompt]) => <button key={label} type="button" onClick={() => { setDraft(prompt); inputRef.current?.focus(); }}><Icon name={icon} size={14} />{label}</button>)}
         </div>}
-        <p className="privacy-note"><Icon name="book" size={12} /> Your project context stays yours.</p>
       </section>
 
       <aside className={`memory-panel ${mobilePanel ? 'mobile-visible' : 'is-hidden'}`} aria-label="Project memory" aria-hidden={!mobilePanel}>
