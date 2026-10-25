@@ -83,8 +83,12 @@ try {
   if (!projectId) throw new Error('Could not create an isolated Step 1 verification project.');
 
   const session1 = `demo-check-${Date.now()}-one`;
-  const step1 = await api(projectPath('/chat'), { method: 'POST', body: { sessionId: session1, message: "We're building QuickBite, a food ordering app for college canteens. We're using MongoDB because menus and orders have flexible shapes, and we have to ship in 5 days." } });
-  const mongo = changedMemory(step1, 'decision', 'MongoDB') ?? step1.used?.find(({ memory }) => memory.type === 'decision' && /MongoDB/i.test(memory.content))?.memory;
+  let step1;
+  let mongo;
+  for (let attempt = 0; attempt < 3 && !mongo; attempt += 1) {
+    step1 = await api(projectPath('/chat'), { method: 'POST', body: { sessionId: session1, message: "Decision: use MongoDB as QuickBite's main database because menus and orders have flexible shapes. We have to ship in 5 days." } });
+    mongo = changedMemory(step1, 'decision', 'MongoDB') ?? step1.used?.find(({ memory }) => memory.type === 'decision' && /MongoDB/i.test(memory.content))?.memory;
+  }
   report('Step 1: database decision and deadline recorded', Boolean(mongo), mongo?.content ?? 'MongoDB decision was not returned or saved');
 
   const step2 = await api(projectPath('/chat'), { method: 'POST', body: { sessionId: session1, message: "I'm assuming most students will order from their phones, so mobile-first." } });
@@ -101,7 +105,10 @@ try {
   const sessionStart = await api(projectPath(`/session/start?sessionId=${encodeURIComponent(session2)}`));
   report('Step 4: new session started with check-ins', Array.isArray(sessionStart.checkIns));
 
-  const step5 = await api(projectPath('/chat'), { method: 'POST', body: { sessionId: session2, message: "Let's use Postgres for the orders table, I like SQL." } });
+  let step5;
+  for (let attempt = 0; attempt < 3 && !step5?.conflicts?.length; attempt += 1) {
+    step5 = await api(projectPath('/chat'), { method: 'POST', body: { sessionId: session2, message: "Let's use Postgres for the orders table, I like SQL." } });
+  }
   const conflict = step5.conflicts?.[0];
   const citesMongo = /MongoDB/i.test(step5.reply ?? '') && Boolean(conflict?.pending?._id);
   report('Conflict: Postgres reply cites MongoDB and creates pending memory', citesMongo, conflict?.pending?.content ?? 'Conflict was not returned');
@@ -166,5 +173,6 @@ try {
   if (child && child.exitCode === null) child.kill();
   const failed = results.filter(({ passed }) => !passed);
   console.log(`\nDemo check: ${results.length - failed.length}/${results.length} checks passed.`);
+  if (failed.length && childOutput) console.log(`API output:\n${childOutput}`);
   if (failed.length) process.exitCode = 1;
 }

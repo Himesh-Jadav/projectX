@@ -66,11 +66,15 @@ export async function recall(query, { projectId }) {
 
 export async function saveMemory(input) {
   await connect();
+  const projectId = String(input.projectId ?? config.demoProjectId);
+  for (const reference of [input.targetOf, input.supersedes, input.outcomeOf].filter(Boolean)) {
+    await getMemory(projectId, reference);
+  }
   const timestamp = now();
   const embedding = await embed(input.content, 'RETRIEVAL_DOCUMENT');
   const document = {
     userId: String(input.userId ?? config.demoUserId),
-    projectId: String(input.projectId ?? config.demoProjectId),
+    projectId,
     createdByName: input.createdByName ?? 'Unknown',
     type: input.type,
     content: input.content,
