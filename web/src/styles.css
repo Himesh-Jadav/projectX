@@ -1668,9 +1668,9 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visi
   text-decoration: none;
 }
 .brand-logo {
-  height: 44px;
+  height: 38px;
   width: auto;
-  max-width: 190px;
+  max-width: 160px;
   object-fit: contain;
   display: block;
   transition: transform 0.2s ease, filter 0.2s ease;
@@ -1682,21 +1682,21 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visi
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .auth-logo {
-  height: 68px;
+  height: 54px;
   width: auto;
-  max-width: 260px;
+  max-width: 220px;
   object-fit: contain;
   display: block;
 }
 .welcome-logo {
-  height: 80px;
+  height: 72px;
   width: auto;
-  max-width: 300px;
+  max-width: 280px;
   object-fit: contain;
-  margin: 0 auto 14px;
+  margin: 0 auto 16px;
   display: block;
-  filter: drop-shadow(0 4px 20px rgba(130, 160, 255, 0.25));
+  filter: drop-shadow(0 6px 24px rgba(130, 160, 255, 0.35));
 }
