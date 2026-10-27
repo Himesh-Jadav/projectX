@@ -15,8 +15,18 @@ const safeMemory = (memory) => {
   return safe;
 };
 
+router.get('/', async (req, res, next) => {
+  try {
+    const scope = req.query.scope === 'team' ? 'team' : 'personal';
+    const sessionId = scope === 'team' ? 'team' : String(req.query.sessionId || 'personal');
+    const messages = await recentMessages({ userId: String(req.user._id), projectId: String(req.params.projectId), sessionId, scope });
+    return res.json({ scope, messages });
+  } catch (error) { return next(error); }
+});
+
 router.post('/', async (req, res, next) => {
-  const { sessionId, message, memoryEnabled = true } = req.body ?? {};
+  const { sessionId, message, memoryEnabled = true, scope: requestedScope = 'personal' } = req.body ?? {};
+  const scope = requestedScope === 'team' ? 'team' : 'personal';
   if (typeof sessionId !== 'string' || !sessionId.trim() || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'sessionId and message are required.' });
   }
@@ -25,7 +35,8 @@ router.post('/', async (req, res, next) => {
   const userId = String(req.user._id);
   const projectId = String(req.params.projectId);
   const speaker = req.user.username;
-  const session = { userId, projectId, sessionId };
+  const effectiveSessionId = scope === 'team' ? 'team' : sessionId;
+  const session = { userId, projectId, sessionId: effectiveSessionId, scope };
   const notices = [];
   if (hasSecret(message)) {
     notices.push('Not saved: looks like a secret.');
@@ -35,10 +46,9 @@ router.post('/', async (req, res, next) => {
     });
   }
 
-  let history = [];
+  let history = await recentMessages(session);
   let used = [];
   if (memoryEnabled) {
-    history = await recentMessages(session);
     try { used = await recallLongTerm(message, userId, projectId); }
     catch (error) {
       notices.push('Memory recall was unavailable for this reply.');
@@ -58,9 +68,7 @@ router.post('/', async (req, res, next) => {
   const asksProjectName = /\b(?:what(?:'s| is)|tell me|remind me)\b.{0,40}\b(?:project|workspace)\b.{0,20}\bname\b|\b(?:project|workspace)\b.{0,20}\bname\b.{0,20}\b(?:what|which)\b/i.test(message);
   if (asksProjectName && projectName) {
     const reply = `The project is named ${projectName}.`;
-    if (memoryEnabled) {
-      await appendRecentMessages(session, [{ role: 'user', text: message }, { role: 'assistant', text: reply }]);
-    }
+    await appendRecentMessages(session, [{ role: 'user', text: message }, { role: 'assistant', text: reply }]);
     return res.json({ reply, used: used.map((entry) => ({ ...entry, memory: safeMemory(entry.memory) })), changes: [], conflicts: [], notices });
   }
 
@@ -100,9 +108,7 @@ router.post('/', async (req, res, next) => {
     reply = `You previously saved “${oldValue}” as the current project decision. You now suggested “${newValue}”. Would you like to keep the existing decision or override it with “${newValue}”? Choose an option below.`;
   }
 
-  if (memoryEnabled) {
-    await appendRecentMessages(session, [{ role: 'user', text: message }, { role: 'assistant', text: reply }]);
-  }
+  await appendRecentMessages(session, [{ role: 'user', text: message }, { role: 'assistant', text: reply }]);
 
   res.json({
     reply,

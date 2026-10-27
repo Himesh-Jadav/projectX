@@ -39,8 +39,10 @@ async function cachedEmbed(text, taskType) {
   } catch { return embed(text, taskType); }
 }
 
-const sessionKey = ({ userId, projectId, sessionId }) =>
-  `session:${encodeURIComponent(userId)}:${encodeURIComponent(projectId)}:${encodeURIComponent(sessionId)}`;
+const sessionKey = ({ userId, projectId, sessionId, scope = 'personal' }) => {
+  const owner = scope === 'team' ? 'team' : encodeURIComponent(userId);
+  return `session:${scope}:${owner}:${encodeURIComponent(projectId)}:${encodeURIComponent(sessionId)}`;
+};
 const normalizeFact = (value) => String(value ?? '').trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 const recallStopWords = new Set(['about', 'after', 'again', 'also', 'and', 'are', 'does', 'for', 'from', 'have', 'how', 'into', 'its', 'latest', 'name', 'our', 'please', 'project', 'tell', 'that', 'the', 'their', 'there', 'these', 'this', 'those', 'what', 'when', 'where', 'which', 'who', 'with', 'workspace', 'you', 'your']);
 

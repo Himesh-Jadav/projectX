@@ -332,7 +332,8 @@ function App() {
   const [invitePreview, setInvitePreview] = useState(null);
   const [inviteError, setInviteError] = useState('');
   const projectPath = useCallback((path) => `/api/projects/${projectId}${path}`, [projectId]);
-  const [sessionId, setSessionId] = useState(() => `s_${crypto.randomUUID()}`);
+  const [conversationScope, setConversationScope] = useState('personal');
+  const [sessionId, setSessionId] = useState('personal');
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [memoryEnabled, setMemoryEnabled] = useState(true);
@@ -543,8 +544,8 @@ function App() {
     setNeedsReview(result.needsReview || []);
   }, [typeFilter, statusFilter, projectId, projectPath]);
 
-  const startSession = useCallback(async (fresh = false) => {
-    const nextId = `s_${crypto.randomUUID()}`;
+  const startSession = useCallback(async (fresh = false, scope = conversationScope) => {
+    const nextId = scope === 'team' ? 'team' : (fresh ? `personal_${crypto.randomUUID()}` : 'personal');
     setSessionId(nextId);
     setMessages([]);
     setDraft('');
@@ -557,16 +558,29 @@ function App() {
     try {
       const result = await api(projectPath(`/session/start?sessionId=${encodeURIComponent(nextId)}`));
       setCheckIns(result.checkIns || []);
+      const conversation = await api(projectPath(`/chat?scope=${scope}&sessionId=${encodeURIComponent(nextId)}`));
+      setMessages((conversation.messages || []).map((message) => ({ ...message, localId: crypto.randomUUID() })));
     } catch (error) {
       setPageError(error.message);
     }
-  }, [notify, projectPath]);
+  }, [conversationScope, projectPath]);
 
   useEffect(() => {
     if (startedRef.current || !projectId) return;
     startedRef.current = true;
     startSession(false);
   }, [projectId, startSession]);
+  useEffect(() => {
+    if (conversationScope !== 'team' || !projectId || busy) return undefined;
+    const refreshTeamConversation = async () => {
+      try {
+        const result = await api(projectPath('/chat?scope=team&sessionId=team'));
+        setMessages((result.messages || []).map((message) => ({ ...message, localId: crypto.randomUUID() })));
+      } catch {}
+    };
+    const timer = setInterval(refreshTeamConversation, 3000);
+    return () => clearInterval(timer);
+  }, [conversationScope, projectId, projectPath, busy]);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
   useEffect(() => { if (projectId) { try { localStorage.setItem('hindsight:lastProject', projectId); } catch { /* Storage can be disabled. */ } } }, [projectId]);
   useEffect(() => { feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' }); }, [messages, busy]);
@@ -582,7 +596,7 @@ function App() {
     setMessages((items) => [...items, { role: 'user', text, localId: crypto.randomUUID() }]);
     setBusy(true);
     try {
-      const result = await api(projectPath('/chat'), { method: 'POST', body: JSON.stringify({ sessionId, message: text, memoryEnabled }) });
+      const result = await api(projectPath('/chat'), { method: 'POST', body: JSON.stringify({ sessionId, scope: conversationScope, message: text, memoryEnabled }) });
       setMessages((items) => [...items, { role: 'assistant', text: responseText(result.reply), used: result.used || [], changes: result.changes || [], conflicts: result.conflicts || [], notices: result.notices || [], localId: crypto.randomUUID() }]);
       setLastUsed(result.used || []);
       const savedCount = (result.changes || []).filter((change) => change.kind === 'created').length;
@@ -716,7 +730,7 @@ function App() {
     </header>
     <main className="workspace">
       <section className={`chat-column ${mobilePanel ? 'mobile-hidden' : ''}`} aria-label="Workspace chat">
-        <div className="chat-heading"><div><p className="eyebrow">WORKSPACE CONVERSATION</p><h1>What are we working on?</h1><p className="heading-subtitle">A thinking partner that remembers the why.</p></div><button className="mobile-panel-button" onClick={() => setMobilePanel(true)}><Icon name="book" /> Memories</button></div>
+        <div className="chat-heading"><div><p className="eyebrow">{conversationScope === 'team' ? 'TEAM CONVERSATION' : 'PERSONAL CONVERSATION'}</p><h1>{conversationScope === 'team' ? 'Shared with your team' : 'Your private chat'}</h1><p className="heading-subtitle">{conversationScope === 'team' ? 'Everyone in this project shares this recent conversation.' : 'Only you can see this recent conversation.'}</p><div className="conversation-scopes" role="group" aria-label="Conversation scope"><button type="button" className={conversationScope === 'personal' ? 'selected' : ''} aria-pressed={conversationScope === 'personal'} onClick={() => { setConversationScope('personal'); startSession(false, 'personal'); }}>Personal</button><button type="button" className={conversationScope === 'team' ? 'selected' : ''} aria-pressed={conversationScope === 'team'} onClick={() => { setConversationScope('team'); startSession(false, 'team'); }}>Team</button></div></div><button className="mobile-panel-button" onClick={() => setMobilePanel(true)}><Icon name="book" /> Memories</button></div>
         {checkIns.length > 0 && <section className="checkins-section"><div className="section-kicker"><span className="pulse-dot" /> A few things to revisit <span className="checkin-count">{checkIns.length}</span></div>{checkIns.map(renderCheckIn)}</section>}
         {pageError && <div className="inline-error"><span>{pageError}</span><button className="text-button" onClick={() => startSession(false)}>Retry</button></div>}
         <div className={`chat-feed ${messages.length ? 'has-messages' : ''}`} ref={feedRef}>
