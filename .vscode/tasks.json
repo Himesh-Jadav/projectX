@@ -10,6 +10,17 @@
 			],
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "Build web",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build:web"
+			],
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

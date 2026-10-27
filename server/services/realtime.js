@@ -1,4 +1,5 @@
 import { connect, memories, memory_events } from '../db.js';
+import { clearRecallCache } from './memoryService.js';
 
 const clientsByProject = new Map();
 const RESTART_BACKOFF_MS = 1_000;
@@ -122,6 +123,7 @@ async function announceExpiredMemories() {
         details: {}
       });
       await memories.deleteOne({ _id: memory._id, projectId: memory.projectId, expiresAt: { $lte: new Date() } });
+      await clearRecallCache(memory.projectId);
     }
   } catch (error) {
     console.error(`Memory expiry check failed: ${error.message}`);

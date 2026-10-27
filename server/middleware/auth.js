@@ -13,6 +13,8 @@ export async function requireAuth(req, res, next) {
     await connect();
     const user = await users.findOne({ _id: new ObjectId(payload.sub) });
     if (!user) return res.status(401).json({ error: 'Authentication required.' });
+    if (payload.jti !== undefined && payload.jti !== String(user.sessionVersion ?? 0)) return res.status(401).json({ error: 'Authentication required.' });
+    if (payload.jti === undefined && (user.sessionVersion ?? 0) > 0) return res.status(401).json({ error: 'Authentication required.' });
     req.user = user;
     return next();
   } catch {

@@ -13,11 +13,17 @@ services:
     environment:
       - PORT=${PORT:-3001}
       - NODE_ENV=production
-      - AUTO_MIGRATE=true
+      - AUTO_MIGRATE=false
       - APP_URL=${APP_URL_DOCKER:-http://localhost:${HOST_PORT:-3003}}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:$${PORT:-3001}/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped

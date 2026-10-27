@@ -24,7 +24,7 @@ If you wish to use your own MongoDB Atlas cluster or custom AI API keys, simply 
 ```env
 # Database Connection
 MONGODB_URI=mongodb+srv://<username>:<password>@<cluster-host>
-DB_NAME=hindsight
+DB_NAME=smaran
 
 # Security & Auth
 JWT_SECRET=your-random-secret-key-at-least-32-characters-long

@@ -2,6 +2,7 @@ import { ObjectId } from 'mongodb';
 import { config } from '../config.js';
 import { connect, memories, memory_events } from '../db.js';
 import { embed } from './embeddings.js';
+import { clearRecallCache } from './memoryService.js';
 
 const now = () => new Date();
 const idValue = (id) => id instanceof ObjectId ? id : new ObjectId(id);
@@ -33,7 +34,7 @@ export async function recall(query, { projectId }) {
   const vector = await embed(query, 'RETRIEVAL_QUERY');
   const results = await memories.aggregate([
     { $vectorSearch: {
-      index: 'memory_vector', path: 'embedding', queryVector: vector,
+      index: 'memory_index', path: 'embedding', queryVector: vector,
       numCandidates: 100, limit: 8,
       filter: { projectId: String(projectId), status: 'active' }
     } },
@@ -67,17 +68,52 @@ export async function recall(query, { projectId }) {
 export async function saveMemory(input) {
   await connect();
   const projectId = String(input.projectId ?? config.demoProjectId);
+  const userId = String(input.userId ?? config.demoUserId);
+  if (input.action === 'access') {
+    const result = await memories.findOneAndUpdate(
+      { _id: idValue(input.memoryId), projectId },
+      { $set: { lastAccessedAt: now() }, $inc: { accessCount: 1 } },
+      { returnDocument: 'after' }
+    );
+    if (!result) throw new Error('Memory not found for access update.');
+    await clearRecallCache(projectId);
+    return result;
+  }
+  if (input.action === 'update') {
+    const text = input.text ?? input.content;
+    const embedding = input.embedding ?? await embed(text, 'RETRIEVAL_DOCUMENT');
+    const timestamp = now();
+    const result = await memories.findOneAndUpdate(
+      { _id: idValue(input.memoryId), userId, projectId },
+      { $set: {
+        text, content: text, embedding, sourceMessageId: input.sourceMessageId ?? null,
+        importance: input.importance ?? 1, lastAccessedAt: timestamp, updatedAt: timestamp,
+        embeddingModel: config.embeddingModel, type: input.type ?? 'fact',
+        status: input.status ?? 'active', createdByName: input.createdByName ?? 'Unknown',
+        reason: input.reason ?? '', confidence: input.confidence ?? 1,
+        ...(input.source ? { source: input.source } : {})
+      }, $inc: { accessCount: 1 } },
+      { returnDocument: 'after' }
+    );
+    if (!result) throw new Error('Memory not found for update.');
+    await clearRecallCache(projectId);
+    return result;
+  }
   for (const reference of [input.targetOf, input.supersedes, input.outcomeOf].filter(Boolean)) {
     await getMemory(projectId, reference);
   }
   const timestamp = now();
-  const embedding = await embed(input.content, 'RETRIEVAL_DOCUMENT');
+  const text = input.text ?? input.content;
+  const embedding = input.embedding ?? await embed(text, 'RETRIEVAL_DOCUMENT');
   const document = {
-    userId: String(input.userId ?? config.demoUserId),
+    userId,
     projectId,
     createdByName: input.createdByName ?? 'Unknown',
     type: input.type,
-    content: input.content,
+    text,
+    content: text,
+    sourceMessageId: input.sourceMessageId ?? input.source?.messageId ?? null,
+    importance: input.importance ?? 1,
     reason: input.reason ?? '',
     status: input.status ?? 'active',
     confidence: input.confidence ?? 0.8,
@@ -94,10 +130,13 @@ export async function saveMemory(input) {
     confirmCount: 1,
     revisitAfter: input.revisitAfter ?? null,
     expiresAt: input.expiresAt ?? null,
+    lastAccessedAt: timestamp,
+    accessCount: 0,
     embedding,
     embeddingModel: config.embeddingModel
   };
   const { insertedId } = await memories.insertOne(document);
+  await clearRecallCache(projectId);
   document._id = insertedId;
   await event(insertedId, input.status === 'pending' ? 'conflict_held' : 'created', { type: document.type, status: document.status }, { projectId: document.projectId, actorId: document.userId, actorName: document.createdByName });
   return document;
@@ -129,6 +168,7 @@ export async function supersede(projectId, oldId, newId, actor) {
   await event(previousId, 'superseded', { supersededBy: nextId }, actorFields(actor ?? { userId: previous.userId, createdByName: previous.createdByName }, projectId));
   await event(nextId, 'confirmed', { supersedes: previousId, resolvedAs: 'override' }, actorFields(actor ?? { userId: next.userId, createdByName: next.createdByName }, projectId));
   await stalePending(projectId, previousId, actor);
+  await clearRecallCache(projectId);
   return { previous, next };
 }
 
@@ -150,6 +190,7 @@ export async function invalidate(projectId, id, reason = 'Marked as no longer tr
   if (!updated) throw new Error('Memory not found or cannot be invalidated.');
   await event(_id, 'invalidated', { reason }, actorFields(actor ?? { userId: updated.userId, createdByName: updated.createdByName }, projectId));
   await stalePending(projectId, _id, actor);
+  await clearRecallCache(projectId);
   return updated;
 }
 
@@ -160,6 +201,7 @@ export async function deleteMemory(projectId, id, actor) {
   await event(_id, 'deleted', {}, actorFields(actor ?? { userId: document.userId, createdByName: document.createdByName }, projectId));
   const result = await memories.deleteOne({ _id, projectId: String(projectId) });
   if (!result.deletedCount) throw new Error('Memory not found.');
+  await clearRecallCache(projectId);
   await stalePending(projectId, _id, actor);
   return { deleted: true };
 }
@@ -172,5 +214,6 @@ export async function withdrawMemory(projectId, id, actor) {
   }
   await memories.deleteOne({ _id: memory._id, projectId: String(projectId), status: 'pending' });
   await event(memory._id, 'conflict_withdrawn', {}, actorFields(actor, projectId));
+  await clearRecallCache(projectId);
   return { deleted: true };
 }

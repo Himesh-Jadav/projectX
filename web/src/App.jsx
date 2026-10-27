@@ -174,6 +174,9 @@ function Icon({ name, size = 16 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
   const paths = {
     plus: <><path d="M12 5v14M5 12h14" /></>,
+    menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
+    user: <><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" /></>,
+    logout: <><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5M14 8l4 4-4 4M8 12h10" /></>,
     arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
     down: <><path d="m7 10 5 5 5-5" /></>,
     spark: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" /><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" /></>,
@@ -221,20 +224,85 @@ function MemoryCard({ memory, used, score, why, selected, onSelect, onDelete, on
   </article>;
 }
 
-function ConflictCard({ conflict, onResolve, onWithdraw, canResolve, busy }) {
-  const pending = conflict.pending;
-  const target = conflict.target;
-  return <section className="conflict-card">
-    <div className="conflict-heading"><span className="conflict-icon">↔</span><div><strong>A decision is in conflict</strong><p>Keep what you decided, or replace it with this update.</p></div></div>
-    <div className="conflict-compare">
-      <div><span className="compare-label">CURRENT</span><p>{target?.content || 'Existing project memory'}</p>{target?.reason && <small>{target.reason}</small>}</div>
-      <div><span className="compare-label">NEW</span><p>{pending?.content}</p>{pending?.reason && <small>{pending.reason}</small>}</div>
-    </div>
-    <div className="conflict-actions">
-      {canResolve ? <><button className="button button-primary button-small" disabled={busy} onClick={() => onResolve(pending, 'override')}>Override decision</button><button className="button button-quiet button-small" disabled={busy} onClick={() => onResolve(pending, 'keep')}>Keep current</button></> : <span>Waiting for {conflict.targetAuthorName || target?.createdByName || 'the author'} to review</span>}
-      {pending?.userId === conflict.viewerId && <button className="button button-quiet button-small" disabled={busy} onClick={() => onWithdraw(pending)}>Withdraw</button>}
-    </div>
-  </section>;
+function DeleteWorkspaceDialog({ project, onClose, onDeleted }) {
+  const dialog = useRef(null);
+  const [review, setReview] = useState(null);
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { dialog.current.showModal(); }, []);
+  const submit = async (event) => {
+    event.preventDefault();
+    setPending(true); setError('');
+    try {
+      if (!review) {
+        setReview(await api(`/api/projects/${project.id}/deletion-review`, { method: 'POST' }));
+      } else {
+        await api(`/api/projects/${project.id}`, { method: 'DELETE', body: JSON.stringify({ token: review.token, name, password }) });
+        onDeleted(project.id);
+      }
+    } catch (failure) { setError(failure.message); }
+    finally { setPending(false); }
+  };
+  return <dialog ref={dialog} className="invite-modal delete-workspace-dialog" aria-labelledby="delete-workspace-title" onCancel={(event) => { event.preventDefault(); if (!pending) onClose(); }}>
+    <form onSubmit={submit}>
+      <small>Step {review ? '2' : '1'} of 2</small>
+      <h2 id="delete-workspace-title">Delete workspace permanently?</h2>
+      <p><strong>{project.name}</strong> and its chats, memories, invitations and activity will be permanently removed for all members. This cannot be undone. Your account and other workspaces will remain.</p>
+      {review && <>
+        <p>{review.counts.messages} messages · {review.counts.memories} memories · {review.counts.memberships} members</p>
+        <label>Type <strong>{review.name}</strong> to confirm<input autoFocus required autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>Your account password<input type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+      </>}
+      {error && <p className="delete-error" role="alert">{error}</p>}
+      <div className="delete-actions"><button type="button" className="quick-pill" disabled={pending} onClick={onClose}>Cancel</button><button className="quick-pill danger-button" type="submit" disabled={pending || (review && (name !== review.name || !password))}>{pending ? 'Please wait…' : review ? 'Permanently delete workspace' : 'Continue to verification'}</button></div>
+    </form>
+  </dialog>;
+}
+
+function AccountSettingsDialog({ user, onClose, onSaved, onLogout }) {
+  const dialog = useRef(null);
+  const [username, setUsername] = useState(user.username);
+  const [usernamePassword, setUsernamePassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  const submit = async (event, kind) => {
+    event.preventDefault();
+    if (kind === 'password' && newPassword !== confirmPassword) { setMessage('New passwords do not match.'); return; }
+    setPending(true); setMessage('');
+    try {
+      const body = kind === 'username' ? { username, currentPassword: usernamePassword } : { currentPassword, newPassword };
+      const { user: saved } = await api('/api/auth/profile', { method: 'PATCH', body: JSON.stringify(body) });
+      onSaved(saved);
+      setUsernamePassword(''); setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+      setMessage(kind === 'username' ? 'Username updated.' : 'Password updated. Other sessions have been signed out.');
+    } catch (error) { setMessage(error.message); }
+    finally { setPending(false); }
+  };
+  return <dialog ref={dialog} className="account-dialog" aria-labelledby="account-title" onCancel={(event) => { event.preventDefault(); if (!pending) onClose(); }}>
+    <div className="account-dialog-header"><div><p className="eyebrow">YOUR ACCOUNT</p><h2 id="account-title">Account settings</h2></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close account settings"><Icon name="close" /></button></div>
+    <div className="account-identity"><span className="account-avatar"><Icon name="user" size={21} /></span><div><strong>{user.username}</strong><small>{user.email}</small></div></div>
+    <form onSubmit={(event) => submit(event, 'username')} className="account-form">
+      <h3>Username</h3><p>This is how teammates find you for workspace invitations.</p>
+      <label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} pattern="[A-Za-z0-9_]{3,30}" minLength={3} maxLength={30} required autoComplete="username" /></label>
+      <label>Current password<input type="password" value={usernamePassword} onChange={(event) => setUsernamePassword(event.target.value)} required autoComplete="current-password" /></label>
+      <button className="button button-primary" disabled={pending || username.trim().toLowerCase() === user.username}>Save username</button>
+    </form>
+    <form onSubmit={(event) => submit(event, 'password')} className="account-form">
+      <h3>Password</h3>
+      <label>Current password<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required autoComplete="current-password" /></label>
+      <label>New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} required autoComplete="new-password" /></label>
+      <label>Confirm new password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required autoComplete="new-password" /></label>
+      <button className="button button-primary" disabled={pending}>Change password</button>
+    </form>
+    {message && <p className="account-message" role="status">{message}</p>}
+    <button className="account-signout" type="button" onClick={onLogout}><Icon name="logout" size={16} /> Sign out</button>
+  </dialog>;
 }
 
 function App() {
@@ -244,10 +312,14 @@ function App() {
   const [authPending, setAuthPending] = useState(true);
   const [authError, setAuthError] = useState('');
   const [authMode, setAuthMode] = useState('login');
-  const [login, setLogin] = useState({ name: '', email: '', password: '' });
+  const [login, setLogin] = useState({ username: '', email: '', password: '' });
   const [projectMenu, setProjectMenu] = useState(false);
+  const [projectSearch, setProjectSearch] = useState('');
+  const [deleteProject, setDeleteProject] = useState(null);
+  const [creatingProject, setCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
-  const [userMenu, setUserMenu] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
   const [inviteExpiry, setInviteExpiry] = useState('');
@@ -277,7 +349,7 @@ function App() {
   const [selectedId, setSelectedId] = useState('');
   const [timeline, setTimeline] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 801px)').matches);
+  const [mobilePanel, setMobilePanel] = useState(false);
   const [theme, setTheme] = useState(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('hindsight-theme');
@@ -303,6 +375,28 @@ function App() {
       document.documentElement.setAttribute('data-theme', theme);
     }
   }, [theme]);
+
+  useEffect(() => {
+    const timers = new Map();
+    const handleScroll = (event) => {
+      const target = event.target instanceof HTMLElement ? event.target : document.scrollingElement;
+      if (!target) return;
+      target.classList.add('scrolling');
+      clearTimeout(timers.get(target));
+      timers.set(target, setTimeout(() => {
+        target.classList.remove('scrolling');
+        timers.delete(target);
+      }, 800));
+    };
+    document.addEventListener('scroll', handleScroll, true);
+    return () => {
+      document.removeEventListener('scroll', handleScroll, true);
+      for (const [target, timer] of timers) {
+        clearTimeout(timer);
+        target.classList.remove('scrolling');
+      }
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -345,11 +439,26 @@ function App() {
 
   const createProject = async (event) => {
     event.preventDefault();
+    if (creatingProject) return;
+    setCreatingProject(true);
     try {
       const { project } = await api('/api/projects', { method: 'POST', body: JSON.stringify({ name: newProjectName.trim() || 'My workspace' }) });
       startedRef.current = false;
       setProjectList((items) => [...items, project]); setProjectId(project.id); setNewProjectName(''); setProjectMenu(false);
     } catch (error) { notify(error.message, 'warning'); }
+    finally { setCreatingProject(false); }
+  };
+
+  const workspaceDeleted = (id) => {
+    const remaining = projectList.filter((project) => project.id !== id);
+    setProjectList(remaining); setDeleteProject(null);
+    if (id === projectId) {
+      startedRef.current = false;
+      const nextId = remaining[0]?.id || '';
+      setProjectId(nextId); setMessages([]); setLastUsed([]); setAllMemories([]); setNeedsReview([]); setMembers([]); setActivity([]); setDraft('');
+      try { localStorage.setItem('hindsight:lastProject', nextId); localStorage.setItem('smaran:lastProject', nextId); } catch {}
+    }
+    notify('Workspace permanently deleted.');
   };
 
   const loadProjectDetails = useCallback(async () => {
@@ -394,7 +503,7 @@ function App() {
     try { await api(`/api/projects/${projectId}/members/${member.id}`, { method: 'DELETE' }); await loadProjectDetails(); }
     catch (error) { notify(error.message, 'warning'); }
   };
-  const logout = async () => { await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); startedRef.current = false; setUser(null); setProjectId(''); setProjectList([]); setUserMenu(false); setMessages([]); };
+  const logout = async () => { await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); startedRef.current = false; setUser(null); setProjectId(''); setProjectList([]); setAccountOpen(false); setMessages([]); };
 
   const joinInvite = async () => {
     try {
@@ -448,7 +557,6 @@ function App() {
     try {
       const result = await api(projectPath(`/session/start?sessionId=${encodeURIComponent(nextId)}`));
       setCheckIns(result.checkIns || []);
-      if (fresh) notify('A new workspace session is ready.', 'neutral');
     } catch (error) {
       setPageError(error.message);
     }
@@ -575,41 +683,37 @@ function App() {
   );
 
   if (authPending) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}><p>Loading your project…</p></main>;
-  if (!user) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<form className="auth-card" onSubmit={signIn}><div className="auth-logo-wrap"><img src={theme === 'dark' ? '/dark_logo.png' : '/light_logo.png'} alt="Smaran.ai" className="auth-logo" /></div><p className="eyebrow">SMARAN.AI</p><h1>Smaran.ai</h1><div className="auth-tabs"><button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log in</button><button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setAuthError(''); }}>Sign up</button></div>{authMode === 'signup' && <label>Name<input type="text" value={login.name} onChange={(event) => setLogin({ ...login, name: event.target.value })} required /></label>}<label>Email<input type="email" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} required /></label><label>Password<input type="password" minLength={authMode === 'signup' ? 8 : undefined} value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} required /></label>{authError && <p className="auth-error">{authError}</p>}<button className="button button-primary" type="submit">{authMode === 'signup' ? 'Sign up' : 'Log in'}</button></form></main>;
+  if (!user) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<form className="auth-card" onSubmit={signIn}><div className="auth-logo-wrap"><img src={theme === 'dark' ? '/dark_logo.png' : '/light_logo.png'} alt="Smaran.ai" className="auth-logo" /></div><p className="eyebrow">SMARAN.AI</p><h1>Smaran.ai</h1><div className="auth-tabs"><button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log in</button><button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setAuthError(''); }}>Sign up</button></div>{authMode === 'signup' && <label>Username<input type="text" autoComplete="username" minLength={3} maxLength={30} pattern="[A-Za-z0-9_]{3,30}" title="3-30 letters, numbers or underscores" value={login.username} onChange={(event) => setLogin({ ...login, username: event.target.value })} required /><small>3-30 letters, numbers or underscores. Usernames are not case-sensitive.</small></label>}<label>Email<input type="email" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} required /></label><label>Password<input type="password" minLength={authMode === 'signup' ? 8 : undefined} value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} required /></label>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="button button-primary" type="submit">{authMode === 'signup' ? 'Sign up' : 'Log in'}</button></form></main>;
   if (inviteToken && !invitePreview) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<section className="auth-card"><h1>Join project</h1><p>{inviteError || 'Loading invite…'}</p></section></main>;
   if (inviteToken && invitePreview) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<section className="auth-card"><h1>Join {invitePreview.project.name}, invited by {invitePreview.invitedBy}?</h1>{inviteError && <p className="auth-error">{inviteError}</p>}<button className="button button-primary" onClick={joinInvite}>Join</button></section></main>;
-  if (!projectId) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<form className="auth-card" onSubmit={createProject}><h1>Create a workspace</h1><p>Your personal workspace is ready to use. You can make another whenever you need one.</p><label>Workspace name<input placeholder="My workspace (optional)" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /></label><button className="button button-primary" type="submit">Create workspace</button></form></main>;
+  if (!projectId) return <main className={`auth-screen ${theme === 'dark' ? 'theme-dark' : 'theme-light'}`}>{authThemeButton}<form className="auth-card" onSubmit={createProject}><h1>Create a workspace</h1><p>Create a workspace to start chatting and saving project memories.</p><label>Workspace name<input placeholder="My workspace (optional)" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /></label><button className="button button-primary" type="submit">Create workspace</button></form></main>;
 
   return <div className={`app-shell is-new-session ${theme === 'dark' ? 'moon-chat-shell theme-dark' : 'theme-light'} ${messages.length ? 'has-conversation' : ''}`}>
+    {sidebarOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
+    <aside className={'app-sidebar ' + (sidebarOpen ? 'sidebar-open' : '')} aria-label="Main navigation">
+      <div className="sidebar-brand-row"><a className="brand" href="#" aria-label="Smaran.ai home"><img src={theme === 'dark' ? '/dark_logo.png' : '/light_logo.png'} alt="Smaran.ai" className="brand-logo" /></a><button className="sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Close navigation"><Icon name="close" /></button></div>
+      <div className="sidebar-section-heading"><span>Projects</span><span className="sidebar-count">{projectList.length}</span></div>
+      <label className="sidebar-search"><span className="sr-only">Search workspaces</span><input placeholder="Search workspaces" value={projectSearch} onChange={(event) => setProjectSearch(event.target.value)} /></label>
+      <nav className="sidebar-workspaces" aria-label="Workspaces">
+        {projectList.filter((project) => project.name.toLowerCase().includes(projectSearch.toLowerCase())).map((project) => <div className={'sidebar-workspace ' + (project.id === projectId ? 'selected' : '')} key={project.id}>
+          <button className="sidebar-workspace-name" aria-current={project.id === projectId ? 'page' : undefined} onClick={() => { startedRef.current = false; setProjectId(project.id); setMessages([]); setLastUsed([]); setSidebarOpen(false); try { localStorage.setItem('smaran:lastProject', project.id); } catch {} }}><Icon name="book" size={16} /><span>{project.name}</span></button>
+          {project.role === 'owner' && <button className="sidebar-workspace-delete" title={'Delete ' + project.name} aria-label={'Delete workspace ' + project.name} onClick={() => setDeleteProject(project)}><Icon name="trash" size={15} /></button>}
+        </div>)}
+        {!projectList.some((project) => project.name.toLowerCase().includes(projectSearch.toLowerCase())) && <p className="sidebar-empty">No matching workspaces</p>}
+      </nav>
+      <form className="sidebar-create" onSubmit={createProject}><label htmlFor="sidebar-new-workspace">New workspace</label><input id="sidebar-new-workspace" maxLength={120} placeholder="Workspace name" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /><button className="sidebar-create-button" type="submit" disabled={creatingProject}><Icon name="plus" size={16} />{creatingProject ? 'Creating...' : 'Create workspace'}</button></form>
+      <button className="sidebar-account" onClick={() => { setAccountOpen(true); setSidebarOpen(false); }}><span className="sidebar-avatar"><Icon name="user" size={18} /></span><span className="sidebar-account-copy"><strong>{user.username}</strong><small>Account settings</small></span><Icon name="down" size={15} /></button>
+    </aside>
     <header className="topbar">
-      <a className="brand" href="#" aria-label="Smaran.ai home">
-        <img
-          src={theme === 'dark' ? '/dark_logo.png' : '/light_logo.png'}
-          alt="Smaran.ai"
-          className="brand-logo"
-        />
-      </a>
-      <div className="project-switcher"><button className="quick-pill" aria-expanded={projectMenu} onClick={() => setProjectMenu((value) => !value)}>{projectList.find((project) => project.id === projectId)?.name}<span aria-hidden="true">⌄</span></button>{projectMenu && <div className="glass-menu">{projectList.map((project) => <button key={project.id} onClick={() => { startedRef.current = false; setProjectId(project.id); setMessages([]); setLastUsed([]); try { localStorage.setItem('hindsight:lastProject', project.id); localStorage.setItem('smaran:lastProject', project.id); } catch { /* Storage can be disabled. */ } setProjectMenu(false); }}><span>{project.name}</span><small>{project.role === 'owner' ? 'My workspace' : 'Shared workspace'}</small></button>)}<form onSubmit={createProject}><input aria-label="New workspace name" placeholder="Workspace name (optional)" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /><button type="submit">New workspace</button></form></div>}</div>
+      <button className="topbar-menu" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Icon name="menu" size={20} /></button>
+      <span className="topbar-workspace-name">{projectList.find((project) => project.id === projectId)?.name}</span>
       <div className="topbar-actions">
-        <button
-          type="button"
-          className="button button-theme"
-          onClick={toggleTheme}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
-          <span className="theme-toggle-label">{theme === 'dark' ? 'Light' : 'Dark'}</span>
-        </button>
-        <button className="button button-memory" aria-pressed={mobilePanel} onClick={() => setMobilePanel((value) => !value)}><Icon name="book" size={15} /><span>Memory</span></button>
-        <label className={`memory-toggle ${memoryEnabled ? 'enabled' : ''}`} title="Memory on or off"><span>Memory</span><input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} /><span className="toggle-track"><i /></span><b>{memoryEnabled ? 'On' : 'Off'}</b></label>
-        <button className="quick-pill" onClick={() => startSession(true)}>New session</button>
-        {invitations.length > 0 && <button className="quick-pill" onClick={() => setInviteOpen(true)}>Invitations · {invitations.length}</button>}
-        {projectList.find((project) => project.id === projectId)?.role === 'owner' && <button className="quick-pill" onClick={openInvites}>Invite</button>}
-        <div className="user-menu-wrap"><button className="quick-pill" aria-expanded={userMenu} onClick={() => setUserMenu((value) => !value)}>{user.name}</button>{userMenu && <div className="glass-menu user-menu"><button onClick={logout}>Log out</button></div>}</div>
+        <button className="button button-memory" aria-expanded={mobilePanel} onClick={() => setMobilePanel((value) => !value)}><Icon name="book" size={16} /><span>Memory</span></button>
+        {invitations.length > 0 && <button className="button button-memory" onClick={() => setInviteOpen(true)}><Icon name="book" size={16} /><span>Invitations ({invitations.length})</span></button>}
+        {projectList.find((project) => project.id === projectId)?.role === 'owner' && <button className="button button-memory" onClick={openInvites}><Icon name="plus" size={17} /><span>Invite</span></button>}
+        <button type="button" className="button button-theme" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={17} /></button>
       </div>
     </header>
-
     <main className="workspace">
       <section className={`chat-column ${mobilePanel ? 'mobile-hidden' : ''}`} aria-label="Workspace chat">
         <div className="chat-heading"><div><p className="eyebrow">WORKSPACE CONVERSATION</p><h1>What are we working on?</h1><p className="heading-subtitle">A thinking partner that remembers the why.</p></div><button className="mobile-panel-button" onClick={() => setMobilePanel(true)}><Icon name="book" /> Memories</button></div>
@@ -617,23 +721,27 @@ function App() {
         {pageError && <div className="inline-error"><span>{pageError}</span><button className="text-button" onClick={() => startSession(false)}>Retry</button></div>}
         <div className={`chat-feed ${messages.length ? 'has-messages' : ''}`} ref={feedRef}>
           {messages.length === 0 && <div className="welcome-block">
-            <img
-              src={theme === 'dark' ? '/dark_logo.png' : '/light_logo.png'}
-              alt="Smaran.ai"
-              className="welcome-logo"
-            />
-            <h2>Smaran.ai</h2>
-            <p>Build something meaningful — start with a thought, a decision, or a question.</p>
+            <span className="welcome-mark"><Icon name="spark" size={21} /></span>
+            <p className="eyebrow">A THINKING PARTNER FOR YOUR WORK</p>
+            <h2>What are we working on?</h2>
+            <p>Bring a question, a decision, or a rough idea. Smaran keeps the useful context close.</p>
           </div>}
           {messages.map((message) => <div className={`message-row ${message.role}`} key={message.localId}>
             {message.role === 'assistant' && <span className="assistant-avatar"><Icon name="spark" size={15} /></span>}
             <div className="message-content">
               {message.role === 'user' ? <div className="user-bubble">{message.text}</div> : <>
-                <div className={`assistant-copy ${message.failed ? 'failed-copy' : ''}`}><AssistantText text={message.text} /></div>
+                <div className={`assistant-copy ${message.failed ? 'failed-copy' : ''}`}>
+                  <AssistantText text={message.text} />
+                  {!!message.conflicts?.length && <div className="conflict-inline-actions">{message.conflicts.map((conflict) => <div className="conflict-inline-row" key={idOf(conflict.pending)}>
+                    {conflict.canResolveNow !== false ? <>
+                      <button className="conflict-choice-secondary" disabled={busy} onClick={() => resolveConflict(conflict.pending, 'keep')}>Keep existing</button>
+                      <button className="conflict-choice-primary" disabled={busy} onClick={() => resolveConflict(conflict.pending, 'override')}>Override with update</button>
+                    </> : conflict.pending?.userId === user.id ? <button className="conflict-choice-secondary" disabled={busy} onClick={() => withdrawConflict(conflict.pending)}>Withdraw my update</button> : <span>Waiting for {conflict.targetAuthorName || conflict.target?.createdByName || 'the author'} to review</span>}
+                  </div>)}</div>}
+                </div>
                 {!!message.used?.length && <div className="memory-chips"><span>Remembered</span>{message.used.map(({ memory }) => <button key={idOf(memory)} className="memory-chip" onClick={() => showMemory(memory)} title={memory.content}><span className="chip-mark">↗</span>{memory.content}</button>)}</div>}
                 {!!message.changes?.filter((change) => change.kind === 'created').length && <div className="saved-inline"><span className="saved-check"><Icon name="check" size={12} /></span>{message.changes.filter((change) => change.kind === 'created').length} new {message.changes.filter((change) => change.kind === 'created').length === 1 ? 'memory' : 'memories'} saved</div>}
                 {(message.notices || []).filter((notice) => !notice.toLowerCase().includes('not saved: looks like a secret')).map((notice, i) => <div className="message-notice" key={i}>{notice}</div>)}
-                {!!message.conflicts?.length && <div className="conflict-stack">{message.conflicts.map((conflict) => <ConflictCard key={idOf(conflict.pending)} conflict={{ ...conflict, viewerId: user.id }} canResolve={conflict.canResolveNow !== false} onResolve={resolveConflict} onWithdraw={withdrawConflict} busy={busy} />)}</div>}
               </>}
             </div>
           </div>)}
@@ -643,22 +751,14 @@ function App() {
           <textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.target.style.height = '48px'; event.target.style.height = `${Math.min(event.target.scrollHeight, 150)}px`; }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(event); } }} placeholder="Type your request..." rows={1} aria-label="Message Smaran.ai" />
           <div className="composer-footer"><span><span className="composer-status" />{memoryEnabled ? 'Memory is on for this workspace' : 'Memory is off for this message'}</span><button className="send-button" disabled={!draft.trim() || busy} aria-label="Send message" type="submit"><Icon name="arrow" size={17} /></button></div>
         </form>
-        {messages.length === 0 && <div className="quick-actions" aria-label="Quick prompts">
-          {[
-            ['code', 'Generate Code', 'Help me implement a feature in this project.'],
-            ['spark', 'Launch App', 'Help me plan and launch this app.'],
-            ['book', 'UI Components', 'Help me design a useful UI component.'],
-            ['spark', 'Theme Ideas', 'Suggest a visual theme for this project.'],
-            ['book', 'User Dashboard', 'Help me plan a user dashboard.'],
-            ['spark', 'Landing Page', 'Help me create a landing page.'],
-            ['book', 'Upload Docs', 'I want to discuss a project document.'],
-            ['spark', 'Image Assets', 'Help me plan image assets for this project.']
-          ].map(([icon, label, prompt]) => <button key={label} type="button" onClick={() => { setDraft(prompt); inputRef.current?.focus(); }}><Icon name={icon} size={14} />{label}</button>)}
-        </div>}
+
       </section>
 
       <aside className={`memory-panel ${mobilePanel ? 'mobile-visible' : 'is-hidden'}`} aria-label="Project memory" aria-hidden={!mobilePanel}>
-        <div className="panel-topline"><div><p className="eyebrow">WORKSPACE CONTEXT</p><h2>Memory</h2></div><div className="memory-count"><strong>{allMemories.length}</strong><span>memories</span></div><button className="panel-close mobile-panel-button" aria-label="Close memory panel" onClick={() => setMobilePanel(false)}><Icon name="close" /></button></div>
+        <div className="panel-topline"><div><p className="eyebrow">WORKSPACE CONTEXT</p><h2>Memory</h2></div><div className="memory-count"><strong>{allMemories.length}</strong><span>memories</span></div><button className="panel-close" aria-label="Close memory panel" onClick={() => setMobilePanel(false)}><Icon name="close" /></button></div>
+        <label className={`memory-setting ${memoryEnabled ? 'enabled' : ''}`}>
+          <span><strong>Remember conversations</strong><small>Save and recall project decisions</small></span><input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} /><span className="toggle-track"><i /></span>
+        </label>
         <div className="panel-tabs" role="tablist" aria-label="Memory views">
           <button role="tab" aria-selected={tab === 'used'} className={tab === 'used' ? 'active' : ''} onClick={() => selectTab('used')}>Used in this reply</button>
           <button role="tab" aria-selected={tab === 'all'} className={tab === 'all' ? 'active' : ''} onClick={() => selectTab('all')}>All memories</button>
@@ -681,15 +781,16 @@ function App() {
             {timelineLoading ? <div className="timeline-loading"><i /> Loading history…</div> : timeline.length ? <div className="timeline-list">{timeline.map((memory, index) => <div className="timeline-entry" key={idOf(memory)}><div className="timeline-rail"><span className={memory.status === 'active' ? 'rail-current' : ''} />{index < timeline.length - 1 && <i />}</div><div className="timeline-card"><div className="memory-meta"><span className={`type-pill type-${memory.type}`}>{typeLabel(memory.type)}</span><span className="memory-date">{dateLabel(memory.createdAt)}</span></div><h3>{memory.content}</h3>{memory.reason && <p className="memory-reason">{memory.reason}</p>}<span className={`timeline-status status-${memory.status}`}>{memory.status === 'active' ? 'Current decision' : memory.status}</span></div></div>)}</div> : <div className="panel-empty small-empty"><span className="empty-illustration"><Icon name="clock" size={20} /></span><h3>No changes to trace</h3><p>When a decision is updated, its history will appear here.</p></div>}
           </>}
         </div>
-        <div className="panel-footer"><span className="footer-lock">⌑</span><span>Project memory · QuickBite</span><span className="footer-sync"><i /> Synced</span></div>
       </aside>
     </main>
+    {accountOpen && <AccountSettingsDialog user={user} onClose={() => setAccountOpen(false)} onSaved={setUser} onLogout={logout} />}
+    {deleteProject && <DeleteWorkspaceDialog project={deleteProject} onClose={() => setDeleteProject(null)} onDeleted={workspaceDeleted} />}
     {inviteOpen && <div className="glass-backdrop" role="presentation" onClick={() => setInviteOpen(false)}><section className="invite-modal" role="dialog" aria-modal="true" aria-label="Workspace invitations" onClick={(event) => event.stopPropagation()}>
       {invitations.length > 0 && <><h2>Workspace invitations</h2>{invitations.map((invitation) => <div className="member-row" key={invitation.id}><span>{invitation.workspace}</span><small>from {invitation.invitedBy}</small><button className="quick-pill" onClick={() => respondToInvitation(invitation, 'accept')}>Accept</button><button className="quick-pill" onClick={() => respondToInvitation(invitation, 'decline')}>Decline</button></div>)}</>}
       {projectList.find((project) => project.id === projectId)?.role === 'owner' && <><h2>Invite to {projectList.find((project) => project.id === projectId)?.name}</h2>
       <form className="invite-user-form" onSubmit={inviteUser}><input aria-label="Username" placeholder="Username or email" value={inviteUsername} onChange={(event) => setInviteUsername(event.target.value)} /><button className="quick-pill" type="submit" disabled={inviteBusy}>{inviteBusy ? 'Sending…' : 'Invite member'}</button></form>
       <button className="quick-pill" onClick={createInvite}>Create invite link</button>{inviteUrl && <div className="invite-link"><input readOnly value={inviteUrl} /><button className="quick-pill" onClick={() => navigator.clipboard?.writeText(inviteUrl)}>Copy</button><small>Expires {dateLabel(inviteExpiry)}</small></div>}</>}
-      <h3>Members</h3>{members.map((member) => <div className="member-row" key={member.id}><span>{member.name}</span><small>{member.role}</small>{projectList.find((project) => project.id === projectId)?.role === 'owner' && member.id !== user.id && <button className="quick-pill" onClick={() => removeMember(member)}>Remove</button>}</div>)}<button className="quick-pill" onClick={() => setInviteOpen(false)}>Close</button>
+      <h3>Members</h3>{members.map((member) => <div className="member-row" key={member.id}><span>{member.username}</span><small>{member.role}</small>{projectList.find((project) => project.id === projectId)?.role === 'owner' && member.id !== user.id && <button className="quick-pill" onClick={() => removeMember(member)}>Remove</button>}</div>)}<button className="quick-pill" onClick={() => setInviteOpen(false)}>Close</button>
     </section></div>}
     {toast && <div className={`toast toast-${toast.kind}`} role="status"><span className="toast-icon"><Icon name={toast.kind === 'warning' ? 'close' : 'check'} size={15} /></span>{toast.message}<button aria-label="Dismiss notification" onClick={() => setToast(null)}><Icon name="close" size={14} /></button></div>}
   </div>;

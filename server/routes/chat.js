@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { ObjectId } from 'mongodb';
-import { connect, messages, projects } from '../db.js';
-import { recall, saveMemory, confirmMemory, invalidate } from '../services/memory.js';
-import { extractAndReconcile } from '../services/extract.js';
+import { connect, projects } from '../db.js';
+import { appendRecentMessages, recallLongTerm, recentMessages, rememberExchange } from '../services/memoryService.js';
 import { hasSecret } from '../services/secrets.js';
 import { callLLM } from '../services/llm.js';
 import { formatRecalledMemories, REPLY_SYSTEM_PROMPT } from '../services/prompts.js';
@@ -25,10 +24,10 @@ router.post('/', async (req, res, next) => {
 
   const userId = String(req.user._id);
   const projectId = String(req.params.projectId);
-  const speaker = req.user.name;
+  const speaker = req.user.username;
+  const session = { userId, projectId, sessionId };
   const notices = [];
-  const secretDetected = hasSecret(message);
-  if (secretDetected) {
+  if (hasSecret(message)) {
     notices.push('Not saved: looks like a secret.');
     return res.json({
       reply: 'That looks like a secret or credential. I have not stored it or sent it for analysis. If it is real, rotate it before continuing.',
@@ -36,110 +35,80 @@ router.post('/', async (req, res, next) => {
     });
   }
 
+  let history = [];
   let used = [];
   if (memoryEnabled) {
-    try { used = await recall(message, { projectId }); }
-    catch (error) { notices.push('Memory recall was unavailable for this reply.'); console.error(`Memory recall failed: ${error.message}`); }
-  }
-
-  let history = [];
-  if (memoryEnabled) {
-    try {
-      await connect();
-      history = await messages.find({ sessionId, projectId }).sort({ createdAt: -1 }).limit(6).toArray();
-      history.reverse();
-    } catch (error) { console.error(`Chat history lookup failed: ${error.message}`); }
+    history = await recentMessages(session);
+    try { used = await recallLongTerm(message, userId, projectId); }
+    catch (error) {
+      notices.push('Memory recall was unavailable for this reply.');
+      console.error(`Memory recall failed: ${error.message}`);
+    }
   }
 
   const memorySummary = formatRecalledMemories(used);
-  const replyMessages = [
-    { role: 'system', content: `${REPLY_SYSTEM_PROMPT}\n\nThe current speaker is ${speaker}. Cite every memory with its creator's name.\n\nProject memories:\n${JSON.stringify(memorySummary)}` },
-    ...history.map(({ role, text }) => ({ role, content: text })),
-    { role: 'user', content: `${speaker} says: ${message}` }
-  ];
-
-  const settled = await Promise.allSettled([
-    callLLM({ role: 'smart', messages: replyMessages }),
-    memoryEnabled ? extractAndReconcile(`${speaker} says: ${message}`, used, speaker) : Promise.resolve(null)
-  ]);
-  let reply;
-  if (settled[0].status === 'fulfilled') reply = settled[0].value;
-  else {
-    reply = 'I could not reach an assistant model just now. Your project memory is still available; please try again shortly.';
-    notices.push('The assistant provider is temporarily unavailable.');
-    console.error(`Reply generation failed: ${settled[0].reason?.message ?? settled[0].reason}`);
+  let projectName = '';
+  try {
+    await connect();
+    const project = await projects.findOne({ _id: new ObjectId(projectId) }, { projection: { name: 1 } });
+    projectName = project?.name ?? '';
+  } catch (error) { console.error(`Project context lookup failed: ${error.message}`); }
+  // Workspace metadata is authoritative; answer direct name questions from the
+  // database so the model cannot confuse it with the signed-in user's label.
+  const asksProjectName = /\b(?:what(?:'s| is)|tell me|remind me)\b.{0,40}\b(?:project|workspace)\b.{0,20}\bname\b|\b(?:project|workspace)\b.{0,20}\bname\b.{0,20}\b(?:what|which)\b/i.test(message);
+  if (asksProjectName && projectName) {
+    const reply = `The project is named ${projectName}.`;
+    if (memoryEnabled) {
+      await appendRecentMessages(session, [{ role: 'user', text: message }, { role: 'assistant', text: reply }]);
+    }
+    return res.json({ reply, used: used.map((entry) => ({ ...entry, memory: safeMemory(entry.memory) })), changes: [], conflicts: [], notices });
   }
 
   const changes = [];
   const conflicts = [];
-  if (memoryEnabled && settled[1].status === 'rejected') {
-    notices.push("Couldn't update memory this time.");
-    console.error(`Memory extraction failed: ${settled[1].reason?.message ?? settled[1].reason}`);
-  }
-
   const userMessageId = new ObjectId();
-  const assistantMessageId = new ObjectId();
-  if (memoryEnabled && settled[1].status === 'fulfilled' && settled[1].value) {
-    const extracted = settled[1].value;
-    if (extracted.skipped.length) notices.push('Some content was skipped and not saved.');
-    for (const item of extracted.items) {
-      try {
-        const target = item.targetId ? used.find(({ memory }) => String(memory._id) === item.targetId)?.memory : null;
-        if (item.action === 'new') {
-          const saved = await saveMemory({
-            userId, createdByName: speaker, projectId, type: item.type, content: item.content, reason: item.reason,
-            confidence: item.confidence, expiresAt: item.expiresAt, revisitAfter: item.revisitAfter,
-            outcomeOf: item.outcomeOf ? new ObjectId(item.outcomeOf) : null,
-            source: { sessionId, messageId: userMessageId, quote: message }
-          });
-          changes.push({ kind: 'created', memory: safeMemory(saved) });
-        } else if (item.action === 'duplicate') {
-          if (!target) throw new Error('The duplicate target was not among recalled memories.');
-          const confirmed = await confirmMemory(projectId, target._id, { userId, actorName: speaker });
-          changes.push({ kind: 'confirmed', memory: safeMemory(confirmed) });
-        } else if (item.action === 'conflict') {
-          if (!target || target.status !== 'active') throw new Error('The conflict target was not an active recalled memory.');
-          const pending = await saveMemory({
-            userId, createdByName: speaker, projectId, type: item.type, content: item.content, reason: item.reason,
-            confidence: item.confidence, status: 'pending', targetOf: target._id,
-            outcomeOf: item.outcomeOf ? new ObjectId(item.outcomeOf) : null,
-            source: { sessionId, messageId: userMessageId, quote: message }
-          });
-          conflicts.push({ pending: safeMemory(pending), target: safeMemory(target), targetAuthorName: target.createdByName, canResolveNow: target.userId === userId });
-          changes.push({ kind: 'conflict_held', memory: safeMemory(pending) });
-        } else if (item.action === 'invalidate') {
-          if (!target) throw new Error('The invalidation target was not among recalled memories.');
-          const project = await projects.findOne({ _id: new ObjectId(projectId) });
-          if (target.userId !== userId && String(project?.ownerId) !== userId) throw Object.assign(new Error('Only the author or project owner can invalidate this memory.'), { status: 403 });
-          const invalidated = await invalidate(projectId, target._id, item.reason || 'Marked as no longer true by the user.', { userId, actorName: speaker });
-          changes.push({ kind: 'invalidated', memory: safeMemory(invalidated) });
-        }
-      } catch (error) {
-        notices.push('A memory change could not be applied.');
-        console.error(`Memory action failed (${item.action}): ${error.message}`);
-      }
+  if (memoryEnabled) {
+    try {
+      const result = await rememberExchange({ userId, projectId, speaker, message, sourceMessageId: userMessageId, existingMemoryCandidates: used.map(({ memory }) => memory) });
+      if (result?.kind === 'created') changes.push({ kind: 'created', memory: result.memory });
+      if (result?.kind === 'conflict') conflicts.push(result);
+    } catch (error) {
+      notices.push('The new statement could not be checked against project memory.');
+      console.error(`Memory importance gate failed: ${error.message}`);
     }
+  }
+  const conflictContext = conflicts.map(({ target, pending }) =>
+    `A proposed memory conflicts with an existing one. Do not say the new statement is already decided or saved as current. Tell the user the existing statement (“${target.content ?? target.text}”, recorded by ${target.createdByName || 'a teammate'}) conflicts with the new statement (“${pending.content ?? pending.text}”, stated by ${pending.createdByName || speaker}). Ask whether they want to keep the existing statement or override it with the new one. They can also withdraw their proposal using the chat controls.`
+  ).join('\n');
+  const replyMessages = [
+    { role: 'system', content: `${REPLY_SYSTEM_PROMPT}\n\nThe current project is ${projectName || 'unnamed'}. The current speaker is ${speaker}. Cite every memory with its creator's name.\n\nProject memories:\n${JSON.stringify(memorySummary)}${conflictContext ? `\n\nConflict to resolve:\n${conflictContext}` : ''}` },
+    ...history.map(({ role, text }) => ({ role, content: text })),
+    { role: 'user', content: `${speaker} says: ${message}` }
+  ];
+
+  let reply;
+  try { reply = await callLLM({ role: 'smart', messages: replyMessages }); }
+  catch (error) {
+    reply = 'I could not reach an assistant model just now. Your project memory is still available; please try again shortly.';
+    notices.push('The assistant provider is temporarily unavailable.');
+    console.error(`Reply generation failed: ${error.message}`);
+  }
+  if (conflicts.length) {
+    const { target, pending } = conflicts[0];
+    const oldValue = target.content ?? target.text;
+    const newValue = pending.content ?? pending.text;
+    reply = `You previously saved “${oldValue}” as the current project decision. You now suggested “${newValue}”. Would you like to keep the existing decision or override it with “${newValue}”? Choose an option below.`;
   }
 
   if (memoryEnabled) {
-    try {
-      await connect();
-      const timestamp = new Date();
-      await messages.insertMany([
-        { _id: userMessageId, sessionId, userId, projectId, role: 'user', text: message, retrievedMemoryIds: used.map(({ memory }) => memory._id), memoryChanges: changes.map(({ kind, memory }) => ({ kind, memoryId: memory?._id })), createdAt: timestamp },
-        { _id: assistantMessageId, sessionId, userId, projectId, role: 'assistant', text: reply, retrievedMemoryIds: used.map(({ memory }) => memory._id), memoryChanges: changes.map(({ kind, memory }) => ({ kind, memoryId: memory?._id })), createdAt: new Date(timestamp.getTime() + 1) }
-      ]);
-    } catch (error) {
-      notices.push('Chat history could not be saved.');
-      console.error(`Chat message write failed: ${error.message}`);
-    }
+    await appendRecentMessages(session, [{ role: 'user', text: message }, { role: 'assistant', text: reply }]);
   }
 
-  return res.json({
+  res.json({
     reply,
     used: used.map((entry) => ({ ...entry, memory: safeMemory(entry.memory) })),
     changes,
-    conflicts,
+    conflicts: conflicts.map((conflict) => ({ ...conflict, pending: safeMemory(conflict.pending), target: safeMemory(conflict.target) })),
     notices
   });
 });

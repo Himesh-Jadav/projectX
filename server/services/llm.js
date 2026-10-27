@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 
 const TIMEOUT_MS = 8_000;
+const EXTRACTION_TIMEOUT_MS = 20_000;
 const COOLDOWN_MS = 60_000;
 const MAX_ATTEMPTS = 3;
 const cooldowns = new Map();
@@ -37,7 +38,8 @@ async function completion(role, messages, json) {
       if ((cooldowns.get(cooldownKey) ?? 0) > now) continue;
       attempts += 1;
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(new Error('Timeout after 8 seconds')), TIMEOUT_MS);
+      const timeoutMs = json ? EXTRACTION_TIMEOUT_MS : TIMEOUT_MS;
+      const timer = setTimeout(() => controller.abort(new Error(`Timeout after ${timeoutMs / 1000} seconds`)), timeoutMs);
       try {
         const response = await fetch(provider.url, {
           method: 'POST', signal: controller.signal,
@@ -47,7 +49,8 @@ async function completion(role, messages, json) {
           },
           body: JSON.stringify({
             model: provider.model, messages, temperature: 0.2,
-            max_tokens: role === 'fast' ? 300 : 900,
+            // Structured extraction needs room for both reasoning and the full JSON object.
+            max_tokens: json ? 2048 : role === 'fast' ? 300 : 900,
             ...(json ? { response_format: { type: 'json_object' } } : {})
           })
         });
@@ -62,7 +65,7 @@ async function completion(role, messages, json) {
         if (response.status === 429 || response.status >= 500) cooldowns.set(cooldownKey, Date.now() + COOLDOWN_MS);
       } catch (error) {
         lastError = error.name === 'AbortError' || controller.signal.aborted
-          ? new LLMProviderError(`${provider.name} timed out after 8 seconds.`, { cause: error }) : error;
+          ? new LLMProviderError(`${provider.name} timed out after ${timeoutMs / 1000} seconds.`, { cause: error }) : error;
         if (controller.signal.aborted) cooldowns.set(cooldownKey, Date.now() + COOLDOWN_MS);
       } finally { clearTimeout(timer); }
     }

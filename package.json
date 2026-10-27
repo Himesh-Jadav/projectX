@@ -8,6 +8,8 @@
   },
   "scripts": {
     "setup": "node server/scripts/setup.js",
+    "memory:index": "node server/scripts/create-memory-index.js",
+    "memory:backfill-embedding-model": "node server/scripts/backfill-embedding-model.js",
     "seed": "node server/scripts/seed.js",
     "migrate:team": "node server/scripts/migrate-team.js",
     "smoke": "node server/scripts/smoke.js",
@@ -24,6 +26,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
-    "mongodb": "^6.12.0"
+    "mongodb": "^6.12.0",
+    "redis": "^5.12.1"
   }
 }

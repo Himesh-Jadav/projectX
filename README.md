@@ -57,7 +57,19 @@ flowchart LR
     G --> H[✅ Chat reply]
 ```
 
-When memory is enabled, the server uses Gemini to extract candidate memories and create embeddings for recall. Memories are stored against the current project/workspace. For a later message, relevant records can be included as context for the chat response. The Memory panel shows saved records and, for memories used in the latest reply, their match strength and why they appeared.
+When memory is enabled, the server keeps the last 20 turns for each user, project, and session in Redis for 24 hours. Chat exchanges are not written to MongoDB `messages`, and assistant replies are never sent to memory extraction or embedding. Each reply can use recent Redis turns and up to five relevant long-term facts from MongoDB Atlas Vector Search. The extractor stores only non-secret, non-duplicate decisions, assumptions, constraints, or outcomes whose confidence meets `IMPORTANCE_MIN_CONFIDENCE` (default 0.7). Redis also caches embeddings by text hash and project recall results for 60 seconds. Redis failures do not prevent chat or long-term memory from working.
+
+Create the Atlas Vector Search index before using long-term recall:
+
+```powershell
+npm run memory:index
+```
+
+The single Atlas index is `memory_index` on `memories`. It uses cosine similarity over `embedding`, dimensions from `EMBEDDING_DIMS`, and filter fields `userId`, `projectId`, `status`, and `type`. The configured Gemini model is `gemini-embedding-001` with 768 dimensions. `npm run setup` and `npm run memory:index` both wait until the index is queryable; setup also removes the obsolete `memory_vector` index after the replacement is ready.
+
+For existing memory documents, run `npm run memory:backfill-embedding-model` once after setup. It fills missing `embeddingModel` metadata and reports documents whose stored vector length differs from `EMBEDDING_DIMS`. It does not re-embed those vectors; investigate mismatches before relying on their vector recall.
+
+For local development, set `REDIS_URL` (default `redis://localhost:6379`). Docker Compose starts Redis and sets the container URL automatically. `SHORT_TERM_TTL_SECONDS`, `SHORT_TERM_TURN_LIMIT`, `IMPORTANCE_MIN_CONFIDENCE`, `EMBEDDING_CACHE_TTL_SECONDS`, `RECALL_CACHE_TTL_SECONDS`, and `MEMORY_DUPLICATE_THRESHOLD` default to 86400, 20, 0.7, 86400, 60, and 0.92.
 
 The backend uses MongoDB. Configure a MongoDB connection string and a Gemini API key before starting the server.
 
@@ -91,7 +103,7 @@ Copy `.env.example` to `.env`, then set at least:
 
 ```env
 MONGODB_URI=your-mongodb-connection-string
-DB_NAME=hindsight
+DB_NAME=smaran
 JWT_SECRET=a-random-secret-at-least-32-characters-long
 GEMINI_API_KEYS=your-gemini-api-key
 ```
@@ -165,6 +177,8 @@ Open **[http://localhost:5173](http://localhost:5173)**. The API listens on port
 | `docker compose ps` | Show container and health status |
 | `docker compose down` | Stop and remove the container and network |
 | `npm run setup` | Set up MongoDB collections and the vector search index |
+| `npm run memory:index` | Create the `memory_index` Atlas Vector Search index |
+| `npm run memory:backfill-embedding-model` | Backfill embedding metadata and report vector dimension mismatches |
 | `npm run migrate:team` | Migrate legacy single-user memories to team projects |
 | `npm run seed` | Seed demo memories |
 | `npm run smoke` | Run a vector search smoke check |

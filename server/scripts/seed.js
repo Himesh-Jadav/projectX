@@ -12,7 +12,7 @@ async function ensureTeam() {
   const passwordHash = await bcrypt.hash(password, 10);
   const people = {};
   for (const [name, email] of [['Alice', 'alice@quickbite.demo'], ['Bob', 'bob@quickbite.demo']]) {
-    await users.updateOne({ email }, { $set: { name, email, passwordHash }, $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+    await users.updateOne({ email }, { $set: { username: name.toLowerCase(), email, passwordHash }, $setOnInsert: { createdAt: new Date() } }, { upsert: true });
     people[name] = await users.findOne({ email });
   }
   let project = await projects.findOne({ name: 'QuickBite', ownerId: people.Alice._id });

@@ -7,7 +7,7 @@ import { requireAuth, requireProjectMember } from '../middleware/auth.js';
 const router = Router({ mergeParams: true });
 router.use(requireAuth, requireProjectMember);
 const validId = (value) => ObjectId.isValid(value);
-const actor = (req) => ({ projectId: String(req.params.projectId), userId: String(req.user._id), actorId: String(req.user._id), actorName: req.user.name });
+const actor = (req) => ({ projectId: String(req.params.projectId), userId: String(req.user._id), actorId: String(req.user._id), actorName: req.user.username });
 const safe = (memory) => { const { embedding, ...doc } = memory; return doc; };
 
 router.get('/', async (req, res, next) => {

@@ -10,9 +10,24 @@ function keyList(name) {
   return (process.env[name] ?? '').split(',').map((key) => key.trim()).filter(Boolean);
 }
 
+function positiveInteger(name, fallback) {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer.`);
+  return value;
+}
+
+const duplicateThreshold = Number(process.env.MEMORY_DUPLICATE_THRESHOLD ?? 0.92);
+if (!Number.isFinite(duplicateThreshold) || duplicateThreshold < -1 || duplicateThreshold > 1) {
+  throw new Error('MEMORY_DUPLICATE_THRESHOLD must be between -1 and 1.');
+}
+
 const dimensions = Number.parseInt(process.env.EMBEDDING_DIMS ?? '768', 10);
 if (!Number.isInteger(dimensions) || dimensions < 1) {
   throw new Error('EMBEDDING_DIMS must be a positive integer (768 for the configured Gemini model).');
+}
+const importanceMinConfidence = Number(process.env.IMPORTANCE_MIN_CONFIDENCE ?? 0.7);
+if (!Number.isFinite(importanceMinConfidence) || importanceMinConfidence < 0 || importanceMinConfidence > 1) {
+  throw new Error('IMPORTANCE_MIN_CONFIDENCE must be between 0 and 1.');
 }
 
 const jwtSecret = required('JWT_SECRET');
@@ -36,6 +51,13 @@ export const config = Object.freeze({
   openrouterSmartModel: process.env.OPENROUTER_SMART_MODEL?.trim() || 'openai/gpt-oss-120b',
   embeddingModel: process.env.EMBEDDING_MODEL?.trim() || 'gemini-embedding-001',
   embeddingDims: dimensions,
+  redisUrl: process.env.REDIS_URL?.trim() || 'redis://localhost:6379',
+  shortTermTtlSeconds: positiveInteger('SHORT_TERM_TTL_SECONDS', 86400),
+  shortTermTurnLimit: positiveInteger('SHORT_TERM_TURN_LIMIT', 20),
+  importanceMinConfidence,
+  embeddingCacheTtlSeconds: positiveInteger('EMBEDDING_CACHE_TTL_SECONDS', 86400),
+  recallCacheTtlSeconds: positiveInteger('RECALL_CACHE_TTL_SECONDS', 60),
+  memoryDuplicateThreshold: duplicateThreshold,
   demoUserId: process.env.DEMO_USER_ID?.trim() || 'demo-user',
   demoProjectId: process.env.DEMO_PROJECT_ID?.trim() || 'quickbite',
   recallSimilarityThreshold: 0.55

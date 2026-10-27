@@ -1,5 +1,6 @@
 import { MongoClient } from 'mongodb';
 import { config } from './config.js';
+import { ensureSchema } from './services/schema.js';
 
 const client = new MongoClient(config.mongodbUri, { serverSelectionTimeoutMS: 15000 });
 let connectionPromise;
@@ -7,8 +8,9 @@ let collections;
 
 export async function connect() {
   if (!connectionPromise) {
-    connectionPromise = client.connect().then(() => {
+    connectionPromise = client.connect().then(async () => {
       const database = client.db(config.dbName);
+      await ensureSchema(database);
       collections = {
         users: database.collection('users'),
         projects: database.collection('projects'),

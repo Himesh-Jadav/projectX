@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import { ObjectId } from 'mongodb';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
-import { connect, invites, memberships, memory_events, projects, users } from '../db.js';
-import { requireAuth, requireOwner, requireProjectMember } from '../middleware/auth.js';
+import { connect, dbClient, invites, memberships, memory_events, projects, users } from '../db.js';
+import { requireAuth, requireOwner, requireProjectMember, userRateLimit } from '../middleware/auth.js';
 import { attachProjectStream } from '../services/realtime.js';
+import { clearRecallCache } from '../services/memoryService.js';
 
 const router = Router();
 const INVITE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
@@ -15,7 +18,7 @@ function writeMemberEvent({ projectId, actor, event, memberId }) {
   return memory_events.insertOne({
     projectId: idString(projectId),
     actorId: idString(actor._id),
-    actorName: actor.name,
+    actorName: actor.username,
     event,
     at: new Date(),
     details: { memberId: idString(memberId) }
@@ -24,19 +27,14 @@ function writeMemberEvent({ projectId, actor, event, memberId }) {
 
 async function projectMemberList(projectId) {
   const rows = await memberships.find({ projectId }).toArray();
-  const people = await Promise.all(rows.map((row) => users.findOne({ _id: row.userId }, { projection: { name: 1 } })));
-  return rows.map((row, index) => ({ id: idString(row.userId), name: people[index]?.name ?? '', role: row.role }));
+  const people = await Promise.all(rows.map((row) => users.findOne({ _id: row.userId }, { projection: { username: 1 } })));
+  return rows.map((row, index) => ({ id: idString(row.userId), username: people[index]?.username ?? '', role: row.role }));
 }
 
 router.get('/projects', requireAuth, async (req, res, next) => {
   try {
     await connect();
-    let rows = await memberships.find({ userId: req.user._id }).toArray();
-    if (!rows.length) {
-      const { insertedId: projectId } = await projects.insertOne({ name: `${req.user.name}'s workspace`, ownerId: req.user._id, createdAt: new Date() });
-      await memberships.insertOne({ projectId, userId: req.user._id, role: 'owner', joinedAt: new Date(), invitedBy: req.user._id });
-      rows = [{ projectId, role: 'owner' }];
-    }
+    const rows = await memberships.find({ userId: req.user._id }).toArray();
     const docs = await projects.find({ _id: { $in: rows.map((row) => row.projectId) } }).toArray();
     const roleByProject = new Map(rows.map((row) => [idString(row.projectId), row.role]));
     return res.json({ projects: docs.map((project) => ({ id: idString(project._id), name: project.name, role: roleByProject.get(idString(project._id)) })) });
@@ -56,13 +54,60 @@ router.post('/projects', requireAuth, async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
+// The review token binds the two confirmation steps to this owner and workspace.
+router.post('/projects/:projectId/deletion-review', requireAuth, requireProjectMember, requireOwner, userRateLimit, async (req, res, next) => {
+  try {
+    const database = await connect();
+    const project = await projects.findOne({ _id: new ObjectId(req.params.projectId), ownerId: req.user._id });
+    if (!project) return res.status(404).json({ error: 'Workspace not found.' });
+    const filter = { projectId: { $in: [project._id, String(project._id)] } };
+    const counts = {};
+    for (const name of ['memories', 'messages', 'memberships', 'invites', 'memory_events']) {
+      counts[name] = await database.collection(name).countDocuments(filter);
+    }
+    const token = jwt.sign({ purpose: 'delete-workspace', projectId: String(project._id) }, config.jwtSecret, {
+      algorithm: 'HS256', subject: String(req.user._id), audience: 'workspace-deletion', expiresIn: '5m'
+    });
+    return res.json({ token, counts, name: project.name });
+  } catch (error) { return next(error); }
+});
+
+router.delete('/projects/:projectId', requireAuth, requireProjectMember, requireOwner, userRateLimit, async (req, res, next) => {
+  try {
+    const { token, name, password } = req.body ?? {};
+    let review;
+    try { review = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'], audience: 'workspace-deletion', subject: String(req.user._id) }); }
+    catch { return res.status(400).json({ error: 'Deletion review expired or invalid. Close this dialog and start again.' }); }
+    if (review.purpose !== 'delete-workspace' || review.projectId !== req.params.projectId) return res.status(400).json({ error: 'Review this workspace before deleting it.' });
+    if (typeof password !== 'string' || password.length > 1024 || !await bcrypt.compare(password, req.user.passwordHash)) {
+      return res.status(400).json({ error: 'Your account password is incorrect.' });
+    }
+    const database = await connect();
+    const projectId = new ObjectId(req.params.projectId);
+    const session = dbClient.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const project = await projects.findOne({ _id: projectId, ownerId: req.user._id }, { session });
+        if (!project) throw Object.assign(new Error('Workspace not found.'), { status: 404 });
+        if (typeof name !== 'string' || name !== project.name) throw Object.assign(new Error('Enter the exact workspace name.'), { status: 400 });
+        const filter = { projectId: { $in: [projectId, String(projectId)] } };
+        for (const collection of ['memories', 'messages', 'memory_events', 'invites', 'memberships']) {
+          await database.collection(collection).deleteMany(filter, { session });
+        }
+        await projects.deleteOne({ _id: projectId }, { session });
+      });
+    } finally { await session.endSession(); }
+    await clearRecallCache(String(projectId));
+    return res.json({ ok: true });
+  } catch (error) { return next(error); }
+});
+
 router.post('/projects/:projectId/invitations', requireAuth, requireProjectMember, requireOwner, async (req, res, next) => {
   try {
     const username = String(req.body?.username || '').trim();
     if (!username) return res.status(400).json({ error: 'Enter a username or email.' });
     await connect();
-    const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const target = await users.findOne({ $or: [{ email: username.toLowerCase() }, { name: { $regex: `^${escapedUsername}$`, $options: 'i' } }] });
+    const target = await users.findOne({ $or: [{ email: username.toLowerCase() }, { username: username.toLowerCase() }] });
     if (!target) return res.status(404).json({ error: 'No account found for that username.' });
     if (idString(target._id) === idString(req.user._id)) return res.status(400).json({ error: 'You are already a member of this workspace.' });
     const projectId = new ObjectId(req.params.projectId);
@@ -71,7 +116,7 @@ router.post('/projects/:projectId/invitations', requireAuth, requireProjectMembe
     if (existing) return res.status(409).json({ error: 'An invitation is already pending for that user.' });
     const project = await projects.findOne({ _id: projectId }, { projection: { name: 1 } });
     const { insertedId } = await invites.insertOne({ kind: 'user', projectId, invitedUserId: target._id, invitedBy: req.user._id, status: 'pending', createdAt: new Date() });
-    return res.status(201).json({ invitation: { id: idString(insertedId), username: target.name, workspace: project?.name } });
+    return res.status(201).json({ invitation: { id: idString(insertedId), username: target.username, workspace: project?.name } });
   } catch (error) { return next(error); }
 });
 
@@ -80,8 +125,8 @@ router.get('/invitations', requireAuth, async (req, res, next) => {
     await connect();
     const rows = await invites.find({ kind: 'user', invitedUserId: req.user._id, status: 'pending' }).sort({ createdAt: -1 }).toArray();
     const invitations = await Promise.all(rows.map(async (row) => {
-      const [project, inviter] = await Promise.all([projects.findOne({ _id: row.projectId }, { projection: { name: 1 } }), users.findOne({ _id: row.invitedBy }, { projection: { name: 1 } })]);
-      return project ? { id: idString(row._id), workspaceId: idString(row.projectId), workspace: project.name, invitedBy: inviter?.name || 'A teammate' } : null;
+      const [project, inviter] = await Promise.all([projects.findOne({ _id: row.projectId }, { projection: { name: 1 } }), users.findOne({ _id: row.invitedBy }, { projection: { username: 1 } })]);
+      return project ? { id: idString(row._id), workspaceId: idString(row.projectId), workspace: project.name, invitedBy: inviter?.username || 'A teammate' } : null;
     }));
     return res.json({ invitations: invitations.filter(Boolean) });
   } catch (error) { return next(error); }
@@ -149,9 +194,9 @@ router.get('/invites/:token', requireAuth, async (req, res, next) => {
     const invite = await invites.findOne({ tokenHash: tokenHash(req.params.token) });
     if (!invite || invite.usedAt || invite.expiresAt <= new Date()) return res.status(410).json({ error: 'Invite is used or expired.' });
     const project = await projects.findOne({ _id: invite.projectId });
-    const inviter = await users.findOne({ _id: invite.createdBy }, { projection: { name: 1 } });
+    const inviter = await users.findOne({ _id: invite.createdBy }, { projection: { username: 1 } });
     if (!project) return res.status(410).json({ error: 'Invite is used or expired.' });
-    return res.json({ project: { id: idString(project._id), name: project.name }, invitedBy: inviter?.name ?? '' });
+    return res.json({ project: { id: idString(project._id), name: project.name }, invitedBy: inviter?.username ?? '' });
   } catch (error) { return next(error); }
 });
 
