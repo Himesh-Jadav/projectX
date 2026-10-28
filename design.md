@@ -1,6 +1,6 @@
 # Smaran.ai: DESIGN.md
 
-Version 1.1 · 28 Oct 2026 (sidebar shell, 768px chat column, smoke background, login and account pages). Jet black, cerulean blue, neon rose.
+Version 1.2 · 29 Oct 2026 (agent steps strip, attention card, ask-user message added as 8.13 to 8.15; sidebar shell, 768px chat column, smoke background, login and account pages). Jet black, cerulean blue, neon rose.
 This replaces the "dark glass over a photo" look in `UI_PROMPT.md` and PRD section 13. **Behaviour, API calls, state logic and the demo script do not change.** This document changes how things look and which surface is visible when.
 
 ---
@@ -365,6 +365,39 @@ Width 280, fill jet-900 (solid, no blur), 1px right border jet-650, flex column,
 - Text selection: `::selection { background: rgba(255,61,139,0.35); color: #FFFFFF }`.
 - Icons: lucide only, 16px, stroke 1.75, color inherits the text color.
 - Empty and error text always uses plain words, never raw error codes.
+
+### 8.13 Agent steps strip (under each reply, only when the agent ran)
+
+Sits inside the 768px chat column, left edge aligned with the reply bubble (44px in, past the avatar), 8px under the bubble and above the memory chips.
+- **Collapsed (default)**: a pill, height 28, radius 999, fill jet-900, border jet-700, content `Agent · 3 steps` in mono-sm `#A7AEC0`, a 14px chevron. Hover: border `#3A4157`, fill jet-800. If the agent fell back to the normal pipeline: the pill reads `Pipeline` with no chevron.
+- **Expanded**: a vertical list under the pill, 2px line jet-700 on the left, 12px indent. Expand and collapse over 200ms (grid-template-rows 0fr to 1fr, plus opacity). Rows appear with a 40ms stagger.
+- **Step row**: 16px lucide icon, action name in mono-sm cerulean-300, then one `why` line in small `#A7AEC0` (max 2 lines), then a result line in mono-sm `#7C849A` (for example `3 memories · best 0.82`).
+  - Icons: `search_memory` Search, `check_conflict` GitCompare, `save_memory` Save, `ask_user` MessageCircleQuestion, `answer` MessageSquare.
+  - Only `save_memory` rows use neon-300 for the icon (it writes memory). Everything else is cerulean. This keeps neon rare.
+- Keyboard: the pill is a button with `aria-expanded`. The expanded list is a plain list.
+- Never shown while Memory is off.
+
+### 8.14 Attention card (replaces the check-in card, same look)
+
+The existing check-in card (8.5) becomes one card with up to 4 rows. It appears when a session starts or a project opens. It is agent-initiated, so the user did not ask for it.
+- Card: fill jet-850, border jet-700, radius 16, padding 16, 3px left stripe cerulean-400. Header: `N things need your attention` (small 600 primary) and a ghost "Dismiss all" button.
+- Placement: in the empty state it takes the place of the quick actions row, between the hero and the composer, inside the 768px column. In a thread that already has messages it is the first item in the thread. It does not by itself switch the background from `smoke-soft` to `calm` (only real messages do).
+- Row (min height 48, 12px gap): a kind label in mono-sm uppercase, the title in 15 primary, a detail line in small secondary, and the action buttons on the right (wrap under on narrow widths).
+
+| Kind | Label color | Buttons |
+|---|---|---|
+| `stale_assumption` | cerulean-300 | "Still true" (secondary), "No longer true" (ghost) |
+| `expiring_constraint` | cerulean-300 | "OK" (ghost) |
+| `pending_review` | neon-300 (shows "CONFLICT") | "Override" (rose), "Keep" (secondary) |
+| `decision_no_outcome` | cerulean-300 | "Add outcome" (secondary): fills the composer with `Outcome of "<decision>": ` and focuses it |
+
+- Show at most 4 rows and a "+N more" ghost link that opens the Memory panel on the All tab.
+- After an action the row collapses to one muted line ("Confirmed" or "Overridden") for 2 seconds and then leaves (200ms). When no rows remain, the card leaves.
+- At most one neon row is visible at a time in this card. If there are several pending reviews, show the first and fold the rest into "+N more".
+
+### 8.15 Ask-user message (when the agent asks a question)
+
+A normal reply bubble plus a small label above it: `Needs your answer` in mono-sm uppercase cerulean-300 on the cerulean tint pill (`#11202E`, radius 8, padding 2 8). Under the bubble, up to 3 option pills in the quick-action style (36px, jet-900, border jet-700). Clicking an option **sends** it as the user's next message. The composer placeholder stays unchanged.
 
 ## 9. Tokens (paste into `src/index.css`)
 

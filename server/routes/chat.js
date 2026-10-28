@@ -4,7 +4,7 @@ import { connect, projects } from '../db.js';
 import { appendRecentMessages, recallLongTerm, recentMessages, rememberExchange } from '../services/memoryService.js';
 import { hasSecret } from '../services/secrets.js';
 import { callLLM } from '../services/llm.js';
-import { formatRecalledMemories, REPLY_SYSTEM_PROMPT } from '../services/prompts.js';
+import { formatRecalledMemories, REPLY_SYSTEM_PROMPT, buildReplySystemContent } from '../services/prompts.js';
 import { requireAuth, requireProjectMember, userRateLimit } from '../middleware/auth.js';
 
 const router = Router({ mergeParams: true });
@@ -88,10 +88,11 @@ router.post('/', async (req, res, next) => {
   const conflictContext = conflicts.map(({ target, pending }) =>
     `A proposed memory conflicts with an existing one. Do not say the new statement is already decided or saved as current. Tell the user the existing statement (“${target.content ?? target.text}”, recorded by ${target.createdByName || 'a teammate'}) conflicts with the new statement (“${pending.content ?? pending.text}”, stated by ${pending.createdByName || speaker}). Ask whether they want to keep the existing statement or override it with the new one. They can also withdraw their proposal using the chat controls.`
   ).join('\n');
+  const savedThisTurn = changes.filter((c) => c.kind === 'created');
   const replyMessages = [
-    { role: 'system', content: `${REPLY_SYSTEM_PROMPT}\n\nThe current project is ${projectName || 'unnamed'}. The current speaker is ${speaker}. Cite every memory with its creator's name.\n\nProject memories:\n${JSON.stringify(memorySummary)}${conflictContext ? `\n\nConflict to resolve:\n${conflictContext}` : ''}` },
+    { role: 'system', content: buildReplySystemContent({ projectName, speaker, memorySummary, savedThisTurn, conflictContext }) },
     ...history.map(({ role, text }) => ({ role, content: text })),
-    { role: 'user', content: `${speaker} says: ${message}` }
+    { role: 'user', content: message }
   ];
 
   let reply;

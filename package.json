@@ -12,6 +12,8 @@
     "memory:backfill-embedding-model": "node server/scripts/backfill-embedding-model.js",
     "seed": "node server/scripts/seed.js",
     "migrate:team": "node server/scripts/migrate-team.js",
+    "verify:reply-markers": "node server/scripts/reply-marker-check.js",
+    "verify:reply-greeting": "node server/scripts/reply-greeting-check.js",
     "smoke": "node server/scripts/smoke.js",
     "verify:step1": "node server/scripts/demo-check.js",
     "demo:reset": "node server/scripts/reset.js",
