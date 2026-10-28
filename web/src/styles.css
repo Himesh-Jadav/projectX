@@ -1846,9 +1846,19 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .is-new-session .topbar-actions .button-theme { width: 37px; padding: 8px; margin-left: 6px; }
 .is-new-session .workspace { width: calc(100% - var(--sidebar-width)); margin-left: var(--sidebar-width); height: calc(100dvh - 68px); padding: 0 24px 22px; }
 .is-new-session .chat-column { width: 100%; max-width: none; }
-.is-new-session .message-content { width: 100%; max-width: 100%; }
+.is-new-session.has-conversation .message-row { width: 100%; }
+.is-new-session.has-conversation .message-content { flex: 0 1 auto; width: min(74%, 720px); max-width: min(74%, 720px); }
+.is-new-session.has-conversation .message-row.user .message-content { width: auto; max-width: min(74%, 720px); }
+.is-new-session.has-conversation .assistant-copy { width: 100%; box-sizing: border-box; }
+.is-new-session.has-conversation .user-bubble { width: fit-content; max-width: 100%; box-sizing: border-box; }
 .is-new-session .welcome-block { margin-bottom: 4vh; }
 .is-new-session .welcome-logo { width: 226px; max-width: 68vw; height: auto; max-height: 100px; padding: 0; border-radius: 0; background: transparent; filter: drop-shadow(0 10px 26px rgba(37,31,110,.2)); }
+.is-new-session.has-conversation .message-content { width: min(74%, 720px); max-width: min(74%, 720px); }
+.is-new-session.has-conversation .message-row.user .message-content { width: auto; max-width: min(74%, 720px); }
+@media (max-width: 520px) {
+  .is-new-session.has-conversation .message-content { width: min(88%, 720px); max-width: min(88%, 720px); }
+  .is-new-session.has-conversation .message-row.user .message-content { width: auto; max-width: 88%; }
+}
 .is-new-session .memory-panel { top: 80px; bottom: 14px; right: 14px; z-index: 45; }
 .is-new-session .panel-topline { padding-bottom: 14px; }
 .is-new-session .panel-close { display: inline-flex; margin-left: 6px; padding: 7px; border: 0; border-radius: 7px; background: transparent; color: inherit; cursor: pointer; }
