@@ -29,6 +29,8 @@ const importanceMinConfidence = Number(process.env.IMPORTANCE_MIN_CONFIDENCE ?? 
 if (!Number.isFinite(importanceMinConfidence) || importanceMinConfidence < 0 || importanceMinConfidence > 1) {
   throw new Error('IMPORTANCE_MIN_CONFIDENCE must be between 0 and 1.');
 }
+const agentMode = (process.env.AGENT_MODE?.trim().toLowerCase() || 'off');
+if (!['on', 'off'].includes(agentMode)) throw new Error('AGENT_MODE must be on or off.');
 
 const jwtSecret = required('JWT_SECRET');
 if (jwtSecret.length < 32) {
@@ -36,6 +38,9 @@ if (jwtSecret.length < 32) {
 }
 
 export const config = Object.freeze({
+  agentMode,
+  agentMaxSteps: positiveInteger('AGENT_MAX_STEPS', 3),
+  agentTimeoutMs: positiveInteger('AGENT_TIMEOUT_MS', 20000),
   mongodbUri: required('MONGODB_URI'),
   dbName: required('DB_NAME'),
   jwtSecret,

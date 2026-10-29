@@ -22,11 +22,11 @@ function providersFor(role) {
   ];
 }
 
-function parseJSON(content) {
-  return JSON.parse(content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
+function parseJSON(content, strict = false) {
+  return JSON.parse(strict ? content.trim() : content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
 }
 
-async function completion(role, messages, json) {
+async function completion(role, messages, json, outerSignal) {
   let attempts = 0;
   let lastError;
   const now = Date.now();
@@ -38,6 +38,9 @@ async function completion(role, messages, json) {
       if ((cooldowns.get(cooldownKey) ?? 0) > now) continue;
       attempts += 1;
       const controller = new AbortController();
+      const relayAbort = () => controller.abort(outerSignal?.reason);
+      if (outerSignal?.aborted) relayAbort();
+      else outerSignal?.addEventListener('abort', relayAbort, { once: true });
       const timeoutMs = json ? EXTRACTION_TIMEOUT_MS : TIMEOUT_MS;
       const timer = setTimeout(() => controller.abort(new Error(`Timeout after ${timeoutMs / 1000} seconds`)), timeoutMs);
       try {
@@ -64,10 +67,11 @@ async function completion(role, messages, json) {
         lastError = new LLMProviderError(`${provider.name} returned HTTP ${response.status}${detail ? `: ${detail.slice(0, 500)}` : ''}`);
         if (response.status === 429 || response.status >= 500) cooldowns.set(cooldownKey, Date.now() + COOLDOWN_MS);
       } catch (error) {
+        if (outerSignal?.aborted) throw new LLMProviderError('LLM request aborted.', { cause: outerSignal.reason ?? error });
         lastError = error.name === 'AbortError' || controller.signal.aborted
           ? new LLMProviderError(`${provider.name} timed out after ${timeoutMs / 1000} seconds.`, { cause: error }) : error;
         if (controller.signal.aborted) cooldowns.set(cooldownKey, Date.now() + COOLDOWN_MS);
-      } finally { clearTimeout(timer); }
+      } finally { clearTimeout(timer); outerSignal?.removeEventListener('abort', relayAbort); }
     }
     if (attempts >= MAX_ATTEMPTS) break;
   }
@@ -75,26 +79,27 @@ async function completion(role, messages, json) {
   throw lastError ?? new LLMProviderError('All LLM providers failed.');
 }
 
-export async function callLLM({ role, messages, json = false, validate }) {
+export async function callLLM({ role, messages, json = false, validate, signal, strictJSON = false }) {
   if (!['fast', 'smart'].includes(role)) throw new TypeError('role must be "fast" or "smart".');
   if (!Array.isArray(messages) || messages.length === 0) throw new TypeError('messages must be a non-empty array.');
-  if (!json) return completion(role, messages, false);
+  if (!json) return completion(role, messages, false, signal);
 
   let repairMessages = messages;
   let parseError;
   for (let repair = 0; repair < 2; repair += 1) {
     let content;
-    try { content = await completion(role, repairMessages, true); }
+    try { content = await completion(role, repairMessages, true, signal); }
     catch (error) {
       if (repair === 1) throw new LLMJSONError('LLM could not repair its invalid JSON response.', { cause: error });
       throw error;
     }
     try {
-      const parsed = parseJSON(content);
+      const parsed = parseJSON(content, strictJSON);
       return typeof validate === 'function' ? validate(parsed) : parsed;
     }
     catch (error) {
       parseError = error;
+      if (strictJSON) throw new LLMJSONError('LLM returned invalid strict JSON.', { cause: error });
       if (repair === 0) repairMessages = [...messages,
         { role: 'assistant', content },
         { role: 'user', content: `Repair the previous response. Return only one valid JSON object that follows the requested schema. Do not add markdown or explanation. Validation error: ${error.message}` }

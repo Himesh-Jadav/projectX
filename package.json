@@ -14,10 +14,13 @@
     "migrate:team": "node server/scripts/migrate-team.js",
     "verify:reply-markers": "node server/scripts/reply-marker-check.js",
     "verify:reply-greeting": "node server/scripts/reply-greeting-check.js",
+    "verify:agent": "node server/scripts/verify-agent.mjs",
+    "verify": "npm run verify:reply-markers && npm run verify:reply-greeting && npm run verify:step1",
     "smoke": "node server/scripts/smoke.js",
     "verify:step1": "node server/scripts/demo-check.js",
     "demo:reset": "node server/scripts/reset.js",
     "start": "node server/index.js",
+    "test": "node --test server/test/*.test.js",
     "dev": "node --watch server/index.js",
     "dev:web": "npm --prefix web run dev",
     "build:web": "npm --prefix web run build"

@@ -10,6 +10,7 @@ import memoriesRouter from './routes/memories.js';
 import sessionRouter from './routes/session.js';
 import authRouter from './routes/auth.js';
 import projectsRouter from './routes/projects.js';
+import conversationsRouter from './routes/conversations.js';
 import { startRealtime } from './services/realtime.js';
 
 const app = express();
@@ -20,6 +21,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use('/api/auth', authRouter);
 app.use('/api', projectsRouter);
+app.use('/api/projects/:projectId/sessions', conversationsRouter);
 app.use('/api/projects/:projectId/chat', chatRouter);
 app.use('/api/projects/:projectId/memories', memoriesRouter);
 app.use('/api/projects/:projectId/session', sessionRouter);

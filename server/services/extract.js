@@ -40,7 +40,8 @@ function validate(payload, base = new Date()) {
 
 export async function extractAndReconcile(message, recalledMemories = [], speaker = '') {
   const context = recalledMemories.map(({ memory }) => ({
-    id: String(memory._id), type: memory.type, content: memory.content, reason: memory.reason, status: memory.status
+    id: String(memory._id), type: memory.type, content: memory.content ?? memory.text, reason: memory.reason, status: memory.status,
+    similarity: memory.similarity ?? null
   }));
   return callLLM({ role: 'fast', json: true, validate, messages: [
     { role: 'system', content: `${EXTRACT_RECONCILE_SYSTEM_PROMPT}\nAttribute every extracted item to the speaker named in the input; the JSON schema stays unchanged.` },

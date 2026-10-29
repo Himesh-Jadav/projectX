@@ -11,6 +11,7 @@ const Topbar = ({
   isOwner = false,
   invitationsCount = 0,
   onOpenInvitations,
+  onNewSession,
   hasMessages = false,
   isLive = true
 }) => {
@@ -35,7 +36,10 @@ const Topbar = ({
           <Menu className="h-5 w-5" />
         </button>
 
-        <span className="font-display text-base font-semibold text-jet-100 truncate max-w-[200px] sm:max-w-[320px]">
+        <span
+          title={projectName}
+          className="min-w-0 max-w-[200px] truncate font-display text-base font-semibold text-jet-100 sm:max-w-[320px]"
+        >
           {projectName}
         </span>
 
@@ -60,6 +64,16 @@ const Topbar = ({
 
       {/* Right controls */}
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onNewSession}
+          aria-label="New session"
+          className="flex h-9 items-center gap-1.5 rounded-xl border border-jet-700 bg-transparent px-3 text-xs font-medium text-jet-100 hover:bg-jet-800 hover:border-[#3A4157] active:translate-y-px transition-all"
+        >
+          <Plus className="h-4 w-4" />
+          <span>New session</span>
+        </button>
+
         {/* Invitations indicator button */}
         {invitationsCount > 0 && (
           <button

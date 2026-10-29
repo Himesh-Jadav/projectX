@@ -1,6 +1,6 @@
 # Smaran.ai: DESIGN.md
 
-Version 1.2 · 29 Oct 2026 (agent steps strip, attention card, ask-user message added as 8.13 to 8.15; sidebar shell, 768px chat column, smoke background, login and account pages). Jet black, cerulean blue, neon rose.
+Version 1.3 · 29 Oct 2026 (agent steps strip, attention card, ask-user message, dependency links and time travel added as 8.13 to 8.17; sidebar shell, 768px chat column, smoke background, login and account pages). Jet black, cerulean blue, neon rose.
 This replaces the "dark glass over a photo" look in `UI_PROMPT.md` and PRD section 13. **Behaviour, API calls, state logic and the demo script do not change.** This document changes how things look and which surface is visible when.
 
 ---
@@ -390,6 +390,7 @@ The existing check-in card (8.5) becomes one card with up to 4 rows. It appears 
 | `expiring_constraint` | cerulean-300 | "OK" (ghost) |
 | `pending_review` | neon-300 (shows "CONFLICT") | "Override" (rose), "Keep" (secondary) |
 | `decision_no_outcome` | cerulean-300 | "Add outcome" (secondary): fills the composer with `Outcome of "<decision>": ` and focuses it |
+| `dependent_review` | cerulean-300 | "Still valid" (secondary), "Review" (ghost): fills the composer with `Review "<decision>" because "<base>" is no longer true: ` |
 
 - Show at most 4 rows and a "+N more" ghost link that opens the Memory panel on the All tab.
 - After an action the row collapses to one muted line ("Confirmed" or "Overridden") for 2 seconds and then leaves (200ms). When no rows remain, the card leaves.
@@ -398,6 +399,18 @@ The existing check-in card (8.5) becomes one card with up to 4 rows. It appears 
 ### 8.15 Ask-user message (when the agent asks a question)
 
 A normal reply bubble plus a small label above it: `Needs your answer` in mono-sm uppercase cerulean-300 on the cerulean tint pill (`#11202E`, radius 8, padding 2 8). Under the bubble, up to 3 option pills in the quick-action style (36px, jet-900, border jet-700). Clicking an option **sends** it as the user's next message. The composer placeholder stays unchanged.
+
+### 8.16 "Based on" and "Supports" on memory cards (dependency-aware memory)
+
+Inside the memory card (8.6), under the reason line:
+- **Based on**: a small row, label `Based on` in mono-sm muted, then up to 2 chips (height 24, radius 999, fill jet-800, border jet-700, text small cerulean-300, content truncated to 28 chars). Clicking a chip scrolls the panel to that card and flashes its border neon-500 for 1.2s. More than 2: a `+N` chip.
+- **Supports N**: a mono-sm badge on the card's top row, next to the type badge (`Supports 2`, text secondary, border jet-700, radius 8). Shown only on assumptions and constraints that other active memories rest on.
+- A memory whose base is now `invalid` or `superseded` shows a small cerulean-300 label `Base changed` next to the status marker until the user confirms it.
+- Nothing is shown when there are no links, so ordinary cards stay as they are.
+
+### 8.17 Time travel slider (stretch, only if time allows)
+
+In the Timeline tab: a 4px track (jet-700) with a 16px cerulean-400 thumb, the date in mono-sm above it, and a ghost "Now" button. Dragging shows the memories that were active on that date, with a dashed outline and the label `As of <date>`. The slider never edits anything, and the panel returns to normal when it is on "Now".
 
 ## 9. Tokens (paste into `src/index.css`)
 

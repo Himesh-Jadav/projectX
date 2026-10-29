@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { connect, dbClient, memories, messages, memory_events, memberships, projects } from '../db.js';
+import { recallLongTerm } from '../services/memoryService.js';
 
 const results = [];
 let child;
@@ -74,6 +75,7 @@ function changedMemory(payload, type, needle) {
 }
 
 try {
+  await connect();
   await startApi();
   console.log(`Using Hindsight API at ${baseUrl}`);
 
@@ -155,21 +157,42 @@ try {
   const afterDelete = await api(projectPath('/chat'), { method: 'POST', body: { sessionId: `${session2}-deleted-memory`, message: 'What database did we choose for the orders table?' } });
   const noDeletedMemory = deletedId && !afterDelete.used?.some(({ memory }) => String(memory._id) === deletedId);
   report('Delete: deleted memory is absent from a later recall', Boolean(noDeletedMemory), noDeletedMemory ? 'deleted memory not present in used[]' : 'could not verify deleted memory exclusion');
+
+  const cacheExpiryId = new ObjectId();
+  await memories.insertOne({
+    _id: cacheExpiryId, projectId: String(projectId), userId: String(projectResponse.user?.id ?? ''),
+    text: 'Cache expiry verification constraint: never serve saffron tea.', content: 'Cache expiry verification constraint: never serve saffron tea.',
+    type: 'constraint', status: 'active', confidence: 1, createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 2000), embedding: []
+  });
+  const expiryQuery = 'Should we serve saffron tea?';
+  const beforeExpiry = await recallLongTerm(expiryQuery, '', projectId);
+  const wasCached = beforeExpiry.some(({ memory }) => String(memory._id) === String(cacheExpiryId));
+  await delay(3000);
+  const afterCacheExpiry = await recallLongTerm(expiryQuery, '', projectId);
+  report('Recall cache: expired constraint is not returned after 3 seconds', wasCached && !afterCacheExpiry.some(({ memory }) => String(memory._id) === String(cacheExpiryId)), `cached before expiry=${wasCached}, returned after expiry=${afterCacheExpiry.some(({ memory }) => String(memory._id) === String(cacheExpiryId))}`);
+
+  // Exercise the normal chat route during a Redis outage when configured against
+  // a dedicated unavailable Redis endpoint; the route must still return a reply.
+  if (process.env.VERIFY_REDIS_DOWN === '1') {
+    const outageResponse = await api(projectPath('/chat'), { method: 'POST', body: { sessionId: `${session2}-redis-down`, message: 'What is the project status?' } });
+    report('Redis outage: chat route returns without a cache exception', typeof outageResponse.reply === 'string');
+  }
 } catch (error) {
   report('Demo check execution', false, error.message);
 } finally {
   if (projectId) {
     try {
-      await connect();
       const objectProjectId = new ObjectId(projectId);
       await Promise.all([
         memories.deleteMany({ projectId }), messages.deleteMany({ projectId }),
         memory_events.deleteMany({ projectId }), memberships.deleteMany({ projectId: objectProjectId }),
         projects.deleteOne({ _id: objectProjectId })
       ]);
-      await dbClient.close();
     } catch (error) { console.error(`Verification project cleanup failed: ${error.message}`); }
   }
+  try { await dbClient.close(); }
+  catch (error) { console.error(`Database close failed: ${error.message}`); }
   if (child && child.exitCode === null) child.kill();
   const failed = results.filter(({ passed }) => !passed);
   console.log(`\nDemo check: ${results.length - failed.length}/${results.length} checks passed.`);

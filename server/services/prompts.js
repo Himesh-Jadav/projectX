@@ -15,12 +15,13 @@ export const EXTRACT_RECONCILE_SYSTEM_PROMPT = `Extract only commitments and sta
 Return exactly this JSON shape:
 {"items":[{"type":"decision|assumption|constraint|outcome","content":"standalone statement","reason":"why, preferably in the user's words","confidence":0.0,"expiresIn":null,"revisitIn":null,"action":"new|duplicate|conflict|invalidate","targetId":null,"outcomeOf":null}],"skipped":[{"reason":"..."}]}
 
-Use recalled memory ids for targetId. duplicate means same meaning; conflict contradicts an active memory without retiring it; invalidate means the user explicitly dropped or corrected it. Durations use ISO-8601 (PT2M, P30D) or null. Link outcomes to a recalled decision id when applicable.
+Use recalled memory ids for targetId. duplicate means same meaning; conflict contradicts an active memory without retiring it; invalidate means the user explicitly dropped or corrected it. Phrases such as "dropped", "no longer", "scrap that", "instead of", and "we're not doing X anymore" are explicit corrections: return action "invalidate" and targetId for the matching recalled memory. Do not turn the replacement into a new memory unless it is itself a commitment or stated fact under PRD 10.2. Durations use ISO-8601 (PT2M, P30D) or null. Link outcomes to a recalled decision id when applicable.
 
 Worked examples:
 1. New decision: User "Use MongoDB because menus are flexible." Output item: {"type":"decision","content":"Use MongoDB for the app database.","reason":"Menus are flexible.","confidence":0.9,"expiresIn":null,"revisitIn":null,"action":"new","targetId":null,"outcomeOf":null}.
 2. Conflict: recalled id abc says "Use MongoDB for orders." User "Let's use Postgres for orders." Output item: {"type":"decision","content":"Use Postgres for orders.","reason":"The user prefers SQL.","confidence":0.85,"expiresIn":null,"revisitIn":null,"action":"conflict","targetId":"abc","outcomeOf":null}.
-3. Invalidation: recalled id xyz says "Mobile-first design." User "We dropped the mobile-first idea." Output item: {"type":"assumption","content":"Mobile-first design.","reason":"The user said it was dropped.","confidence":0.95,"expiresIn":null,"revisitIn":null,"action":"invalidate","targetId":"xyz","outcomeOf":null}.`
+3. Invalidation: recalled id xyz says "Mobile-first design." User "We dropped the mobile-first idea." Output item: {"type":"assumption","content":"Mobile-first design.","reason":"The user said it was dropped.","confidence":0.95,"expiresIn":null,"revisitIn":null,"action":"invalidate","targetId":"xyz","outcomeOf":null}.
+4. Temporary constraint: User "No paid APIs for the next 2 minutes, we're in demo mode." Output item: {"type":"constraint","content":"No paid APIs while in demo mode.","reason":"The user stated paid APIs are unavailable during demo mode.","confidence":0.95,"expiresIn":"PT2M","revisitIn":null,"action":"new","targetId":null,"outcomeOf":null}.`
 
 export const formatRecalledMemories = (used) => {
   if (!used?.length) return 'No project memories were recalled.'

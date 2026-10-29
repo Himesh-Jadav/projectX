@@ -15,6 +15,9 @@ const QUICK_ACTIONS = [
 const WorkspaceView = ({
   project,
   messages = [],
+  hasOlderMessages = false,
+  loadingOlderMessages = false,
+  onLoadOlderMessages,
   busy = false,
   draft = '',
   onChangeDraft,
@@ -29,6 +32,7 @@ const WorkspaceView = ({
   isOwner = false,
   invitationsCount = 0,
   onOpenInvitations,
+  onNewSession,
   conversationScope = 'personal',
   onChangeConversationScope,
   checkIns = [],
@@ -84,6 +88,7 @@ const WorkspaceView = ({
         isOwner={isOwner}
         invitationsCount={invitationsCount}
         onOpenInvitations={onOpenInvitations}
+        onNewSession={onNewSession}
         hasMessages={hasMessages}
         isLive={true}
       />
@@ -233,6 +238,13 @@ const WorkspaceView = ({
               {/* Thread messages */}
               {hasMessages && (
                 <div className="space-y-6 pt-2">
+                  {hasOlderMessages && (
+                    <div className="text-center">
+                      <button type="button" onClick={onLoadOlderMessages} disabled={loadingOlderMessages} className="rounded-lg border border-jet-700 px-3 py-1.5 text-xs text-jet-300 hover:bg-jet-800 disabled:opacity-50">
+                        {loadingOlderMessages ? 'Loading older messages…' : 'Load older messages'}
+                      </button>
+                    </div>
+                  )}
                   {messages.map((message) => (
                     <ChatMessage
                       key={message.localId || Math.random()}

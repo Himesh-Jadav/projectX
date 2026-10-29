@@ -105,6 +105,8 @@ const AppContent = () => {
   const [conversationScope, setConversationScope] = useState('personal')
   const [sessionId, setSessionId] = useState('personal')
   const [messages, setMessages] = useState([])
+  const [hasOlderMessages, setHasOlderMessages] = useState(false)
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
   const [draft, setDraft] = useState('')
   const [memoryEnabled, setMemoryEnabled] = useState(true)
   const [checkIns, setCheckIns] = useState([])
@@ -414,8 +416,7 @@ const AppContent = () => {
 
   const startSession = useCallback(async (fresh = false, scope = conversationScope) => {
     if (!projectId) return
-    const nextId = scope === 'team' ? 'team' : (fresh ? `personal_${crypto.randomUUID()}` : 'personal')
-    setSessionId(nextId)
+    let nextId = scope === 'team' ? 'team' : ''
     setDraft('')
     setLastUsed([])
     setCheckIns([])
@@ -423,6 +424,7 @@ const AppContent = () => {
     setMemoryTab('used')
     setPageError('')
     setBusy(false)
+    setHasOlderMessages(false)
     if (fresh) {
       setMessages([])
       setSessionLoading(false)
@@ -430,16 +432,40 @@ const AppContent = () => {
       setSessionLoading(true)
     }
     try {
+      if (scope !== 'team' && !fresh) {
+        const recent = await api(projectPath('/sessions/recent'))
+        nextId = recent.sessionId || `personal_${crypto.randomUUID()}`
+      } else if (scope !== 'team' && fresh) nextId = `personal_${crypto.randomUUID()}`
+      setSessionId(nextId)
       const result = await api(projectPath(`/session/start?sessionId=${encodeURIComponent(nextId)}`))
       setCheckIns(result.checkIns || [])
-      const conversation = await api(projectPath(`/chat?scope=${scope}&sessionId=${encodeURIComponent(nextId)}`))
+      const conversation = scope === 'team'
+        ? await api(projectPath(`/chat?scope=${scope}&sessionId=${encodeURIComponent(nextId)}`))
+        : await api(projectPath(`/sessions/${encodeURIComponent(nextId)}/messages?limit=40`))
       setMessages((conversation.messages || []).map((msg) => ({ ...msg, localId: crypto.randomUUID() })))
+      setHasOlderMessages(Boolean(conversation.hasMore))
     } catch (error) {
       setPageError(error.message)
     } finally {
       setSessionLoading(false)
     }
   }, [conversationScope, projectId, projectPath])
+
+  const loadOlderMessages = useCallback(async () => {
+    const oldest = messages[0]?.createdAt
+    if (!sessionId || !oldest || loadingOlderMessages || !hasOlderMessages) return
+    setLoadingOlderMessages(true)
+    try {
+      const before = encodeURIComponent(new Date(oldest).toISOString())
+      const result = await api(projectPath(`/sessions/${encodeURIComponent(sessionId)}/messages?before=${before}&limit=40`))
+      setMessages((current) => [
+        ...result.messages.map((msg) => ({ ...msg, localId: crypto.randomUUID() })),
+        ...current
+      ])
+      setHasOlderMessages(Boolean(result.hasMore))
+    } catch (error) { setPageError(error.message) }
+    finally { setLoadingOlderMessages(false) }
+  }, [messages, sessionId, loadingOlderMessages, hasOlderMessages, projectPath])
 
   useEffect(() => {
     if (startedRef.current || !projectId) return
@@ -751,6 +777,9 @@ const AppContent = () => {
             <WorkspaceView
               project={currentProject}
               messages={messages}
+              hasOlderMessages={hasOlderMessages}
+              loadingOlderMessages={loadingOlderMessages}
+              onLoadOlderMessages={loadOlderMessages}
               busy={busy}
               draft={draft}
               onChangeDraft={setDraft}
@@ -765,6 +794,7 @@ const AppContent = () => {
               isOwner={currentProject?.role === 'owner'}
               invitationsCount={invitations.length}
               onOpenInvitations={handleOpenInvites}
+              onNewSession={() => startSession(true)}
               conversationScope={conversationScope}
               onChangeConversationScope={(scope) => {
                 setConversationScope(scope)
