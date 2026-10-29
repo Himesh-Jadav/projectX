@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { connect, memories, memory_events } from '../db.js';
 import { embed } from './embeddings.js';
 import { clearRecallCache } from './memoryService.js';
+import { sanitizeBasedOn, findDependents } from './dependencies.js';
 
 const now = () => new Date();
 const idValue = (id) => id instanceof ObjectId ? id : new ObjectId(id);
@@ -87,9 +88,9 @@ export async function saveMemory(input) {
       { _id: idValue(input.memoryId), userId, projectId },
       { $set: {
         text, content: text, embedding, sourceMessageId: input.sourceMessageId ?? null,
-        importance: input.importance ?? 1, lastAccessedAt: timestamp, updatedAt: timestamp,
+        importance: input.importance ?? 1, lastAccessedAt: timestamp, updatedAt: timestamp, statusChangedAt: timestamp,
         embeddingModel: config.embeddingModel, type: input.type ?? 'fact',
-        status: input.status ?? 'active', createdByName: input.createdByName ?? 'Unknown',
+        status: input.status ?? 'active', ...(input.basedOn ? { basedOn: await sanitizeBasedOn(projectId, input.basedOn, input.recalledIds ?? []) } : {}), createdByName: input.createdByName ?? 'Unknown',
         reason: input.reason ?? '', confidence: input.confidence ?? 1,
         ...(input.source ? { source: input.source } : {})
       }, $inc: { accessCount: 1 } },
@@ -116,9 +117,11 @@ export async function saveMemory(input) {
     importance: input.importance ?? 1,
     reason: input.reason ?? '',
     status: input.status ?? 'active',
+    statusChangedAt: timestamp,
     confidence: input.confidence ?? 0.8,
     private: input.private ?? false,
     source: input.source ?? { sessionId: null, messageId: null, quote: input.content },
+    ...(input.basedOn?.length ? { basedOn: await sanitizeBasedOn(projectId, input.basedOn, input.recalledIds ?? []) } : {}),
     supersedes: input.supersedes ?? null,
     supersededBy: null,
     targetOf: input.targetOf ?? null,
@@ -161,15 +164,16 @@ export async function supersede(projectId, oldId, newId, actor) {
   await getMemory(projectId, nextId, { status: { $in: ['pending', 'active'] } });
   const timestamp = now();
   const [previous, next] = await Promise.all([
-    memories.findOneAndUpdate({ _id: previousId, projectId: String(projectId), status: 'active' }, { $set: { status: 'superseded', supersededBy: nextId, updatedAt: timestamp } }, { returnDocument: 'after' }),
-    memories.findOneAndUpdate({ _id: nextId, projectId: String(projectId), status: { $in: ['pending', 'active'] } }, { $set: { status: 'active', supersedes: previousId, updatedAt: timestamp } }, { returnDocument: 'after' })
+    memories.findOneAndUpdate({ _id: previousId, projectId: String(projectId), status: 'active' }, { $set: { status: 'superseded', statusChangedAt: timestamp, supersededBy: nextId, updatedAt: timestamp } }, { returnDocument: 'after' }),
+    memories.findOneAndUpdate({ _id: nextId, projectId: String(projectId), status: { $in: ['pending', 'active'] } }, { $set: { status: 'active', statusChangedAt: timestamp, supersedes: previousId, updatedAt: timestamp } }, { returnDocument: 'after' })
   ]);
   if (!previous || !next) throw new Error('Could not supersede memories: verify the old memory is active and the new memory exists.');
   await event(previousId, 'superseded', { supersededBy: nextId }, actorFields(actor ?? { userId: previous.userId, createdByName: previous.createdByName }, projectId));
   await event(nextId, 'confirmed', { supersedes: previousId, resolvedAs: 'override' }, actorFields(actor ?? { userId: next.userId, createdByName: next.createdByName }, projectId));
+  const dependents = await findDependents(projectId, previousId);
   await stalePending(projectId, previousId, actor);
   await clearRecallCache(projectId);
-  return { previous, next };
+  return { previous, next, dependents };
 }
 
 async function stalePending(projectId, targetId, actor) {
@@ -186,8 +190,10 @@ export async function invalidate(projectId, id, reason = 'Marked as no longer tr
   if (!['active', 'pending'].includes(current.status)) {
     const error = new Error('Memory cannot be invalidated.'); error.status = 404; throw error;
   }
-  const updated = await memories.findOneAndUpdate({ _id, projectId: String(projectId), status: { $in: ['active', 'pending'] } }, { $set: { status: 'invalid', invalidReason: reason, updatedAt: now() } }, { returnDocument: 'after' });
+  const timestamp = now();
+  const updated = await memories.findOneAndUpdate({ _id, projectId: String(projectId), status: { $in: ['active', 'pending'] } }, { $set: { status: 'invalid', statusChangedAt: timestamp, invalidReason: reason, updatedAt: timestamp } }, { returnDocument: 'after' });
   if (!updated) throw new Error('Memory not found or cannot be invalidated.');
+  updated.dependents = await findDependents(projectId, _id);
   await event(_id, 'invalidated', { reason }, actorFields(actor ?? { userId: updated.userId, createdByName: updated.createdByName }, projectId));
   await stalePending(projectId, _id, actor);
   await clearRecallCache(projectId);

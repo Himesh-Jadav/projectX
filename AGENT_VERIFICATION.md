@@ -11,7 +11,7 @@ npm test
 npm run verify:agent
 ```
 
-Expected agent checks: small talk answers without writes; decision check/save/answer; ask-user with no writes; teammate conflict held pending; fallback-triggering invalid planner/tool errors; cross-project target rejection; secret blocked before planner; agent-off legacy path.
+Expected agent checks: small talk answers without writes; decision check/save/answer; ask-user with no writes; teammate conflict held pending; fallback-triggering invalid planner/tool errors; cross-project target rejection; secret blocked before planner; agent-off legacy path; attention returns the four kinds and hides a pending review the viewer cannot resolve.
 
 ## Live API calls to make later
 
@@ -55,9 +55,21 @@ Use a seeded test project and test users. Keep `AGENT_MODE=on` only for the agen
 
    Set `AGENT_MODE=off`, restart the server, and post the same benign message. Expect the legacy response plus `agent: { ran: false, steps: [] }`. Then set agent mode on, ask an ambiguous question, and reopen that session via `GET /api/projects/{projectId}/sessions/{sessionId}/messages`; confirm the assistant message `meta.agentSteps` and `meta.awaiting` are present.
 
-9. **Pending-review visibility**
+9. **Attention scan and visibility**
 
-   `GET /api/projects/{projectId}/memories` returns `needsReview` for pending proposals the current viewer may resolve. The existing `GET /api/projects/{projectId}/session/start` route only returns legacy `checkIns`; the separate 28.6 `attention[]` response is not implemented in this G1 scope. Do not expect an `attention` field until that feature is built.
+   Seed a project with: (a) an active assumption whose `revisitAfter` is in the past, (b) an active constraint expiring within 24 hours, (c) a pending proposal targeting an active memory, and (d) an active decision older than seven days with no active linked outcome. Call `GET /api/projects/{projectId}/session/start` as the project owner. Expect `attention` alongside the unchanged `checkIns`, with all four kinds in this order: `pending_review`, `stale_assumption`, `expiring_constraint`, `decision_no_outcome`. Check each item has only `kind`, `memoryId`, `title`, `detail`, and `actions`; verify the list is capped at eight.
+
+   Repeat as a non-owner who is neither the target memory's author nor the project owner. Confirm that pending proposal is absent from `attention`, while other visible attention kinds remain. A non-owner who authored the target memory should be able to see its pending review. Confirm this scan makes no model call.
+
+10. **Attention card and action behavior**
+
+   Open a project/session with attention rows. Confirm one card appears in the empty thread in place of quick actions, or as the first item in a thread with messages. It should show up to four rows, at most one pending-review row, and a `+N more` control that opens Memory on the All tab. Confirm the card alone does not switch the background mode.
+
+   Test `Still true` and `No longer true` on an assumption, and `Override` and `Keep` on a pending proposal; verify each uses the existing endpoint and updates the memory as expected. `OK` should dismiss the constraint row in the client only. `Add outcome` should populate `Outcome of "<decision title>": ` and focus the composer. Dismiss or act on a stale assumption, reopen the project, and confirm it is not raised again for that browser. Confirm dismissed expiring-constraint and no-outcome rows return on a later session start.
+
+11. **Ask-user choices**
+
+   Cause an agent turn to return `awaiting.question` and options. Confirm the assistant reply shows `Needs your answer` and up to three option pills. Click an option and verify its exact text is sent as the next user message. Reopen the thread and confirm the ask-user UI is restored from the persisted `meta.awaiting`.
 
 ## Full live suite
 

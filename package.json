@@ -15,6 +15,7 @@
     "verify:reply-markers": "node server/scripts/reply-marker-check.js",
     "verify:reply-greeting": "node server/scripts/reply-greeting-check.js",
     "verify:agent": "node server/scripts/verify-agent.mjs",
+    "verify:deps": "node server/scripts/verify-deps.mjs",
     "verify": "npm run verify:reply-markers && npm run verify:reply-greeting && npm run verify:step1",
     "smoke": "node server/scripts/smoke.js",
     "verify:step1": "node server/scripts/demo-check.js",

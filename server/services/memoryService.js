@@ -8,6 +8,7 @@ import { invalidate, saveMemory } from './memory.js';
 import { hasSecret } from './secrets.js';
 import { extractAndReconcile } from './extract.js';
 import { loadRecentThread, threadCacheKey } from './threadStore.js';
+import { sanitizeBasedOn, findDependents } from './dependencies.js';
 
 let redisPromise;
 let lastRedisAttempt = 0;
@@ -266,7 +267,10 @@ export async function applyItems({ user, project, items, recalled = [], sourceMe
     .slice(0, 5);
   if (item.action === 'invalidate') {
     const target = candidates.find(({ memory }) => String(memory._id) === String(item.targetId))?.memory;
-    if (target) results.push({ kind: 'invalidated', memory: await invalidate(projectId, target._id, item.reason, { userId, createdByName: speaker }) });
+    if (target) {
+      const memory = await invalidate(projectId, target._id, item.reason, { userId, createdByName: speaker });
+      results.push({ kind: 'invalidated', memory, dependents: memory.dependents ?? await findDependents(projectId, target._id) });
+    }
     continue;
   }
   const duplicate = candidates.find(({ memory: nearest }) => (nearest.similarity * 2 - 1) > config.memoryDuplicateThreshold);
@@ -278,6 +282,7 @@ export async function applyItems({ user, project, items, recalled = [], sourceMe
       userId, projectId, text, content: text, embedding, sourceMessageId, importance: item.confidence,
       type: item.type, status: 'pending', targetOf: target._id, createdByName: speaker,
       reason: item.reason, confidence: item.confidence,
+      basedOn: await sanitizeBasedOn(projectId, item.basedOn, existingMemoryCandidates.map((memory) => memory._id)), recalledIds: existingMemoryCandidates.map((memory) => memory._id),
       source: { sessionId: null, messageId: sourceMessageId, quote: text }
     });
     const project = await projects.findOne({ _id: new ObjectId(projectId) }, { projection: { ownerId: 1 } });
@@ -289,6 +294,7 @@ export async function applyItems({ user, project, items, recalled = [], sourceMe
     importance: item.confidence, type: item.type, status: 'active', createdByName: speaker,
     reason: item.reason, confidence: item.confidence,
     expiresAt: item.expiresAt, revisitAfter: item.revisitAfter, outcomeOf: item.outcomeOf ?? null,
+    basedOn: await sanitizeBasedOn(projectId, item.basedOn, existingMemoryCandidates.map((memory) => memory._id)), recalledIds: existingMemoryCandidates.map((memory) => memory._id),
     source: { sessionId: null, messageId: sourceMessageId, quote: text }
   });
   results.push({ kind: 'created', memory });

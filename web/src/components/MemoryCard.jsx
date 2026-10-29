@@ -18,6 +18,7 @@ const getTypeLabel = (type) => {
   }
   return map[type] || type || 'Memory'
 }
+const hasUnconfirmedBase = (memory) => (memory.basedOn ?? []).some((base) => ['invalid', 'superseded'].includes(base.status) && (!memory.lastConfirmedAt || new Date(memory.lastConfirmedAt).getTime() < new Date(base.statusChangedAt).getTime()))
 
 const MemoryCard = ({
   memory,
@@ -100,14 +101,16 @@ const MemoryCard = ({
       aria-label={`Memory: ${memory.content}`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
+      id={`memory-${memory._id}`}
       className={`group relative rounded-2xl bg-jet-850 p-4 transition-all duration-150 ease-[cubic-bezier(0.2,0.8,0.2,1)] focus-visible:outline-2 focus-visible:outline-cerulean-300 ${selectedClasses}`}
     >
       {/* Top row */}
       <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-xs uppercase tracking-[0.06em] text-jet-300 border border-jet-700 rounded-lg px-2 py-0.5">
-          {getTypeLabel(memory.type)}
-        </span>
-        <StatusMarker status={memory.status || 'active'} />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-mono text-xs uppercase tracking-[0.06em] text-jet-300 border border-jet-700 rounded-lg px-2 py-0.5">{getTypeLabel(memory.type)}</span>
+          {['assumption', 'constraint'].includes(memory.type) && Number(memory.supportsCount) > 0 ? <span className="font-mono text-[11px] text-jet-300 border border-jet-700 rounded-lg px-2 py-0.5">Supports {memory.supportsCount}</span> : null}
+        </div>
+        <div className="flex items-center gap-2">{hasUnconfirmedBase(memory) && <span className="text-xs text-cerulean-300">Base changed</span>}<StatusMarker status={memory.status || 'active'} /></div>
       </div>
 
       {/* Content */}
@@ -121,6 +124,7 @@ const MemoryCard = ({
           {memory.reason}
         </p>
       )}
+      {memory.basedOn?.length > 0 && <div className="mt-2 flex flex-wrap items-center gap-1.5"><span className="font-mono text-[11px] text-jet-400">Based on</span>{memory.basedOn.slice(0,2).map((base) => <button key={base.id} type="button" title={base.title} onClick={(event) => { event.stopPropagation(); const target = document.getElementById(`memory-${base.id}`); target?.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => { target?.classList.add('border-neon-500'); setTimeout(() => target?.classList.remove('border-neon-500'), 1200) }, 250) }} className="max-w-[190px] truncate rounded-full border border-jet-700 bg-jet-800 px-2.5 py-1 text-xs text-cerulean-300">{base.title.slice(0,28)}</button>)}{memory.basedOn.length > 2 && <span className="rounded-full border border-jet-700 px-2 py-1 text-xs text-jet-300">+{memory.basedOn.length - 2}</span>}</div>}
 
       {/* Author & date footer */}
       <div className="mt-2.5 flex items-center justify-between text-xs font-mono text-jet-400">

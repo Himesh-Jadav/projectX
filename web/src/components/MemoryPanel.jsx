@@ -14,6 +14,9 @@ const MemoryPanel = ({
   needsReview = [],
   activity = [],
   timeline = [],
+  historicalTimeline = null,
+  timelineAsOf = '',
+  onTimelineAsOf,
   timelineLoading = false,
   tab = 'used',
   onSelectTab,
@@ -244,14 +247,29 @@ const MemoryPanel = ({
               <span>Follow how project decisions have changed.</span>
             </div>
 
+            {timeline.length > 0 && (() => {
+              const min = Math.min(...timeline.map((item) => new Date(item.createdAt).getTime()).filter(Number.isFinite))
+              const now = Date.now()
+              const selected = timelineAsOf ? Number(timelineAsOf) : now
+              return <div className="mb-4 rounded-xl border border-jet-700 bg-jet-850 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs text-jet-300">{timelineAsOf ? `As of ${formatDateLabel(selected)}` : 'Now'}</span>
+                  <button type="button" onClick={() => onTimelineAsOf?.('')} className="rounded-lg border border-jet-700 px-2.5 py-1 text-xs text-jet-200 hover:bg-jet-800">Now</button>
+                </div>
+                <input aria-label="Timeline date" type="range" min={min} max={now} step={86400000} value={Math.max(min, Math.min(now, selected))} onChange={(event) => onTimelineAsOf?.(event.target.value)} className="h-1 w-full cursor-pointer accent-cerulean-400" />
+              </div>
+            })()}
+
+            {timelineAsOf && <div className="mb-3 rounded-lg border border-dashed border-cerulean-400/60 px-3 py-2 text-xs font-mono text-cerulean-300">As of {formatDateLabel(Number(timelineAsOf))}</div>}
+
             {timelineLoading ? (
               <div className="py-8 text-center text-xs text-jet-400">
                 Loading history…
               </div>
-            ) : timeline.length > 0 ? (
+            ) : (timelineAsOf ? (historicalTimeline || []) : timeline).length > 0 ? (
               <div className="relative pl-4 space-y-4 before:absolute before:left-1.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-jet-700">
-                {timeline.map((item) => {
-                  const isActive = item.status === 'active'
+                {(timelineAsOf ? (historicalTimeline || []) : timeline).map((item) => {
+                  const isActive = timelineAsOf ? true : item.status === 'active'
                   return (
                     <div key={String(item._id || Math.random())} className="relative">
                       {/* Node dot */}
@@ -262,7 +280,7 @@ const MemoryPanel = ({
                             : 'border border-dashed border-jet-500 bg-jet-900'
                         }`}
                       />
-                      <div className="rounded-xl border border-jet-700 bg-jet-850 p-3">
+                      <div className={`rounded-xl border ${timelineAsOf ? 'border-dashed border-cerulean-400/60' : 'border-jet-700'} bg-jet-850 p-3`}>
                         <div className="flex items-center justify-between text-xs font-mono text-jet-400">
                           <span className="uppercase text-cerulean-300 font-sans font-semibold">
                             {item.type || 'Decision'}

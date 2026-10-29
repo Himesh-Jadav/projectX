@@ -13,7 +13,9 @@ Keep the answer direct and useful.`
 export const EXTRACT_RECONCILE_SYSTEM_PROMPT = `Extract only commitments and stated facts from the latest user message. Ignore questions, brainstorming, and tentative ideas. Keep content standalone and concise. Never store secrets or private personal details; list them in skipped with reason "looks like a secret".
 
 Return exactly this JSON shape:
-{"items":[{"type":"decision|assumption|constraint|outcome","content":"standalone statement","reason":"why, preferably in the user's words","confidence":0.0,"expiresIn":null,"revisitIn":null,"action":"new|duplicate|conflict|invalidate","targetId":null,"outcomeOf":null}],"skipped":[{"reason":"..."}]}
+{"items":[{"type":"decision|assumption|constraint|outcome","content":"standalone statement","reason":"why, preferably in the user's words","confidence":0.0,"expiresIn":null,"revisitIn":null,"action":"new|duplicate|conflict|invalidate","targetId":null,"outcomeOf":null,"basedOn":[]}],"skipped":[{"reason":"..."}]}
+
+Set basedOn ONLY to recalled memory ids that the new item explicitly rests on, and only when the user's own words give that reason ("because", "since", "given that"). Otherwise leave it empty.
 
 Use recalled memory ids for targetId. duplicate means same meaning; conflict contradicts an active memory without retiring it; invalidate means the user explicitly dropped or corrected it. Phrases such as "dropped", "no longer", "scrap that", "instead of", and "we're not doing X anymore" are explicit corrections: return action "invalidate" and targetId for the matching recalled memory. Do not turn the replacement into a new memory unless it is itself a commitment or stated fact under PRD 10.2. Durations use ISO-8601 (PT2M, P30D) or null. Link outcomes to a recalled decision id when applicable.
 

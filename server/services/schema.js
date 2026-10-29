@@ -30,6 +30,7 @@ export async function ensureSchema(database) {
   await invites.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'invites_expiresAt_ttl' });
   await database.collection('memories').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'memories_expiresAt_ttl' });
   await database.collection('memories').createIndex({ userId: 1, projectId: 1, status: 1, createdAt: -1 }, { name: 'memories_owner_status_createdAt' });
+  await database.collection('memories').createIndex({ projectId: 1, basedOn: 1 }, { name: 'project_basedOn' });
   await database.collection('messages').createIndex({ projectId: 1, userId: 1, sessionId: 1, createdAt: 1 }, { name: 'messages_project_user_session_createdAt' });
   for (const name of ['memories', 'messages', 'memory_events', 'invites']) {
     await database.collection(name).createIndex({ projectId: 1 }, { name: `${name}_project` });

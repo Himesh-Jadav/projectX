@@ -3,6 +3,7 @@ import { Check, AlertTriangle, X, PanelLeft } from 'lucide-react'
 import { AmbientProvider, useAmbient } from './components/AmbientContext'
 import Backdrop from './components/Backdrop'
 import Sidebar from './components/Sidebar'
+import BrandIcon from './components/Brand'
 import WorkspaceView from './components/WorkspaceView'
 import AccountView from './components/AccountView'
 import EmptyStateView from './components/EmptyStateView'
@@ -110,6 +111,7 @@ const AppContent = () => {
   const [draft, setDraft] = useState('')
   const [memoryEnabled, setMemoryEnabled] = useState(true)
   const [checkIns, setCheckIns] = useState([])
+  const [attention, setAttention] = useState([])
   const [busy, setBusy] = useState(false)
   const [pageError, setPageError] = useState('')
 
@@ -122,6 +124,8 @@ const AppContent = () => {
   const [typeFilter, setTypeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [timeline, setTimeline] = useState([])
+  const [historicalTimeline, setHistoricalTimeline] = useState(null)
+  const [timelineAsOf, setTimelineAsOf] = useState('')
   const [timelineLoading, setTimelineLoading] = useState(false)
 
   // Toast notification
@@ -395,6 +399,9 @@ const AppContent = () => {
 
   const handleLogout = async () => {
     await api('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    setLogin({ username: '', email: '', password: '' })
+    setAuthError('')
+    setAuthMode('login')
     startedRef.current = false
     setUser(null)
     setProjectId('')
@@ -439,6 +446,9 @@ const AppContent = () => {
       setSessionId(nextId)
       const result = await api(projectPath(`/session/start?sessionId=${encodeURIComponent(nextId)}`))
       setCheckIns(result.checkIns || [])
+      let dismissed = []
+      try { dismissed = JSON.parse(localStorage.getItem(`smaran:raised-assumptions:${projectId}`) || '[]') } catch {}
+      setAttention((result.attention || []).filter((item) => item.kind !== 'stale_assumption' || !dismissed.includes(item.memoryId)))
       const conversation = scope === 'team'
         ? await api(projectPath(`/chat?scope=${scope}&sessionId=${encodeURIComponent(nextId)}`))
         : await api(projectPath(`/sessions/${encodeURIComponent(nextId)}/messages?limit=40`))
@@ -495,8 +505,8 @@ const AppContent = () => {
   useProjectStream(user ? projectId : '', handleStreamEvent)
 
   const handleSendMessage = async (event) => {
-    event?.preventDefault()
-    const text = draft.trim()
+    if (typeof event !== 'string') event?.preventDefault()
+    const text = (typeof event === 'string' ? event : draft).trim()
     if (!text || busy) return
     setDraft('')
     setPageError('')
@@ -516,6 +526,8 @@ const AppContent = () => {
           changes: result.changes || [],
           conflicts: result.conflicts || [],
           notices: result.notices || [],
+          agent: result.agent,
+          awaiting: result.awaiting || null,
           memoryOff: !memoryEnabled,
           localId: crypto.randomUUID()
         }
@@ -602,11 +614,46 @@ const AppContent = () => {
     }
   }
 
+  const handleAttentionAction = async (item, action) => {
+    if (action.endpoint === 'client') {
+      setTimeout(() => setAttention((rows) => rows.filter((row) => row.memoryId !== item.memoryId)), 2000)
+      return
+    }
+    if (action.endpoint === 'composer') {
+      setDraft(item.kind === 'dependent_review' ? `Review "${item.title}" because "${action.baseTitle || item.baseTitle}" is no longer true: ` : `Outcome of "${item.title}": `)
+      requestAnimationFrame(() => document.querySelector('textarea[aria-label="Message Smaran.ai"]')?.focus())
+      return
+    }
+    const memory = { _id: item.memoryId, content: item.title }
+    if (action.endpoint === 'resolve') await handleResolveConflict(memory, action.action)
+    else await handleMutateMemory(memory, action.endpoint)
+    setTimeout(() => setAttention((rows) => rows.filter((row) => row.memoryId !== item.memoryId)), 2000)
+    if (item.kind === 'stale_assumption') {
+      try {
+        const key = `smaran:raised-assumptions:${projectId}`
+        const prior = JSON.parse(localStorage.getItem(key) || '[]')
+        localStorage.setItem(key, JSON.stringify([...new Set([...prior, item.memoryId])]))
+      } catch {}
+    }
+  }
+
+  const dismissAttention = () => {
+    const staleIds = attention.filter((item) => item.kind === 'stale_assumption').map((item) => item.memoryId)
+    if (staleIds.length) {
+      try {
+        const key = `smaran:raised-assumptions:${projectId}`
+        const prior = JSON.parse(localStorage.getItem(key) || '[]')
+        localStorage.setItem(key, JSON.stringify([...new Set([...prior, ...staleIds])]))
+      } catch {}
+    }
+    setAttention([])
+  }
+
   const loadTimeline = async () => {
     setTimelineLoading(true)
     try {
-      const response = await api(projectPath('/memories?status=superseded'))
-      const old = response.memories || []
+      const response = await api(projectPath('/memories'))
+      const old = (response.memories || []).filter((memory) => memory.status === 'superseded')
       const chains = await Promise.all(old.map(async (memory) => {
         try {
           return (await api(projectPath(`/memories/${idOf(memory)}/chain`))).chain || [memory]
@@ -616,6 +663,7 @@ const AppContent = () => {
       }))
       const unique = new Map()
       chains.flat().forEach((mem) => unique.set(idOf(mem), mem))
+      ;(response.memories || []).filter((memory) => memory.status === 'active').forEach((mem) => unique.set(idOf(mem), mem))
       setTimeline([...unique.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)))
     } catch (error) {
       notify(error.message, 'warning')
@@ -629,6 +677,15 @@ const AppContent = () => {
     if (nextTab === 'timeline') loadTimeline()
     if (nextTab === 'all') refreshMemories().catch((error) => notify(error.message, 'warning'))
     if (nextTab === 'activity') loadActivity().catch((error) => notify(error.message, 'warning'))
+  }
+
+  const handleTimelineAsOf = async (value) => {
+    setTimelineAsOf(value)
+    if (!value) { setHistoricalTimeline(null); return }
+    try {
+      const response = await api(projectPath(`/memories?asOf=${encodeURIComponent(new Date(Number(value)).toISOString())}`))
+      setHistoricalTimeline(response.memories || [])
+    } catch (error) { notify(error.message, 'warning') }
   }
 
   const handleSelectMemory = (memory) => {
@@ -711,9 +768,12 @@ const AppContent = () => {
               onClick={handleToggleSidebarCollapse}
               aria-label="Expand sidebar"
               title="Expand sidebar"
-              className="flex h-9 w-9 items-center justify-center rounded-xl text-jet-400 hover:bg-jet-800 hover:text-jet-100 transition-colors"
+              className="group relative flex h-9 w-9 items-center justify-center rounded-xl text-jet-400 hover:bg-jet-800 hover:text-jet-100 transition-colors"
             >
-              <PanelLeft className="h-4 w-4" />
+              <BrandIcon className="h-7 w-7" />
+              <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-jet-800 text-jet-100 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                <PanelLeft className="h-4 w-4" />
+              </span>
             </button>
           </div>
         )}
@@ -801,6 +861,10 @@ const AppContent = () => {
                 startSession(false, scope)
               }}
               checkIns={checkIns}
+              attention={attention}
+              onAttentionAction={handleAttentionAction}
+              onDismissAttention={dismissAttention}
+              onOpenAllMemories={() => { setMemoryTab('all'); setMemoryPanelOpen(true); refreshMemories().catch(() => {}) }}
               onMutateMemory={handleMutateMemory}
               pageError={pageError}
               onRetrySession={() => startSession(false)}
@@ -809,6 +873,9 @@ const AppContent = () => {
               needsReview={needsReview}
               activity={activity}
               timeline={timeline}
+              historicalTimeline={historicalTimeline}
+              timelineAsOf={timelineAsOf}
+              onTimelineAsOf={handleTimelineAsOf}
               timelineLoading={timelineLoading}
               memoryTab={memoryTab}
               onSelectMemoryTab={handleSelectMemoryTab}

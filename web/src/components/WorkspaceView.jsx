@@ -1,9 +1,33 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { Sparkles, Check, X, Users, User } from 'lucide-react'
 import Topbar from './Topbar'
 import ChatMessage, { TypingIndicator } from './ChatMessage'
 import ChatComposer from './ChatComposer'
 import MemoryPanel from './MemoryPanel'
+
+const AttentionCard = ({ items = [], onAction, onDismiss, onMore }) => {
+  const [completed, setCompleted] = useState({})
+  useEffect(() => setCompleted({}), [items.map((item) => item.memoryId).join('|')])
+  if (!items.length) return null
+  const visible = []
+  let pendingShown = false
+  for (const item of items) {
+    if (item.kind === 'pending_review' && pendingShown) continue
+    if (item.kind === 'pending_review') pendingShown = true
+    visible.push(item)
+    if (visible.length === 4) break
+  }
+  const hidden = Math.max(0, items.length - visible.length)
+  const labels = { stale_assumption: 'ASSUMPTION', expiring_constraint: 'EXPIRING CONSTRAINT', pending_review: 'CONFLICT', decision_no_outcome: 'DECISION', dependent_review: 'DEPENDENT REVIEW' }
+  return <section className="rounded-2xl border-l-[3px] border-l-cerulean-400 border border-jet-700 bg-jet-850 p-4" aria-label="Attention">
+    <header className="mb-3 flex items-center justify-between gap-3"><h2 className="text-sm font-semibold text-jet-100">{items.length} {items.length === 1 ? 'thing needs' : 'things need'} your attention</h2><button type="button" onClick={onDismiss} className="rounded-lg px-2 py-1 text-xs text-jet-300 hover:bg-jet-800">Dismiss all</button></header>
+    <div className="space-y-3">{visible.map((item) => <div key={`${item.kind}-${item.memoryId}`} className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-t border-jet-700/60 pt-3">
+      <div className="min-w-0 flex-1"><div className={`font-mono text-[11px] tracking-wide ${item.kind === 'pending_review' ? 'text-neon-300' : 'text-cerulean-300'}`}>{labels[item.kind]}</div><div className="text-[15px] font-medium text-jet-100">{item.title}</div><div className="text-xs text-jet-300">{item.detail}</div></div>
+      <div className="flex flex-wrap items-center gap-2">{completed[item.memoryId] ? <span className="text-xs text-jet-400">{completed[item.memoryId]}</span> : (item.actions || []).map((action) => <button key={action.label} type="button" onClick={async () => { setCompleted((state) => ({ ...state, [item.memoryId]: action.label === 'Still true' ? 'Confirmed' : action.label === 'Override' ? 'Overridden' : action.label === 'Keep' ? 'Kept' : action.label === 'No longer true' ? 'Invalidated' : 'Done' })); await onAction(item, action) }} className={`h-8 rounded-lg px-3 text-xs font-medium transition-colors ${action.label === 'Override' ? 'bg-neon-500 text-jet-950 hover:bg-neon-400' : action.endpoint === 'client' ? 'text-jet-300 hover:bg-jet-800' : 'border border-jet-700 text-jet-100 hover:bg-jet-800'}`}>{action.label}</button>)}</div>
+    </div>)}</div>
+    {hidden > 0 && <button type="button" onClick={onMore} className="mt-3 text-xs text-jet-300 underline underline-offset-2 hover:text-cerulean-300">+{hidden} more</button>}
+  </section>
+}
 
 const QUICK_ACTIONS = [
   'Decided on MongoDB for the main database',
@@ -36,6 +60,10 @@ const WorkspaceView = ({
   conversationScope = 'personal',
   onChangeConversationScope,
   checkIns = [],
+  attention = [],
+  onAttentionAction,
+  onDismissAttention,
+  onOpenAllMemories,
   onMutateMemory,
   pageError = '',
   onRetrySession,
@@ -44,6 +72,9 @@ const WorkspaceView = ({
   needsReview = [],
   activity = [],
   timeline = [],
+  historicalTimeline = null,
+  timelineAsOf = '',
+  onTimelineAsOf,
   timelineLoading = false,
   memoryTab = 'used',
   onSelectMemoryTab,
@@ -149,51 +180,7 @@ const WorkspaceView = ({
                 </div>
               </div>
 
-              {/* Check-ins card per section 8.5 */}
-              {checkIns.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-xs font-mono text-neon-300">
-                    <span className="h-2 w-2 rounded-full bg-neon-400 animate-pulse" />
-                    <span>Things to revisit ({checkIns.length})</span>
-                  </div>
-                  {checkIns.map((item) => {
-                    const mem = item.memory
-                    if (!mem) return null
-                    const memId = String(mem._id || '')
-                    return (
-                      <div
-                        key={memId}
-                        className="flex items-center justify-between rounded-2xl border-l-[3px] border-l-cerulean-400 border border-jet-700 bg-jet-850 p-4 shadow-sm"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-jet-100">
-                            {mem.content}
-                          </p>
-                          <small className="font-mono text-xs text-jet-400">
-                            {item.kind === 'assumption_due' ? 'Assumption to review' : 'Expiring soon'}
-                          </small>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => onMutateMemory(mem, 'confirm')}
-                            className="h-8 rounded-lg border border-jet-700 bg-transparent px-3 text-xs font-medium text-jet-100 hover:bg-jet-800"
-                          >
-                            Still true
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onMutateMemory(mem, 'invalidate')}
-                            className="h-8 rounded-lg bg-transparent px-2.5 text-xs font-medium text-jet-400 hover:text-neon-400 hover:bg-jet-800"
-                          >
-                            No longer true
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+              {hasMessages && <AttentionCard items={attention} onAction={onAttentionAction} onDismiss={onDismissAttention} onMore={onOpenAllMemories} />}
 
               {/* Page error banner */}
               {pageError && (
@@ -219,8 +206,8 @@ const WorkspaceView = ({
                     Tell me what you've decided. I'll remember why.
                   </p>
 
-                  {/* 4 quick actions per section 8.4 */}
-                  <div className="mt-8 flex flex-wrap items-center justify-center gap-2 max-w-[620px] mx-auto">
+                  {/* Attention replaces quick actions while there is review work. */}
+                  {attention.length ? <div className="mt-8"><AttentionCard items={attention} onAction={onAttentionAction} onDismiss={onDismissAttention} onMore={onOpenAllMemories} /></div> : <div className="mt-8 flex flex-wrap items-center justify-center gap-2 max-w-[620px] mx-auto">
                     {QUICK_ACTIONS.map((action, idx) => (
                       <button
                         key={idx}
@@ -231,7 +218,7 @@ const WorkspaceView = ({
                         {action}
                       </button>
                     ))}
-                  </div>
+                  </div>}
                 </div>
               )}
 
@@ -254,7 +241,9 @@ const WorkspaceView = ({
                       onWithdrawConflict={onWithdrawConflict}
                       currentUser={currentUser}
                       selectedMemoryId={selectedMemoryId}
+                      memoryEnabled={memoryEnabled}
                       busy={busy}
+                      onSelectOption={onSendMessage}
                     />
                   ))}
                   {busy && <TypingIndicator />}
@@ -293,6 +282,9 @@ const WorkspaceView = ({
               needsReview={needsReview}
               activity={activity}
               timeline={timeline}
+              historicalTimeline={historicalTimeline}
+              timelineAsOf={timelineAsOf}
+              onTimelineAsOf={onTimelineAsOf}
               timelineLoading={timelineLoading}
               tab={memoryTab}
               onSelectTab={onSelectMemoryTab}
@@ -329,6 +321,9 @@ const WorkspaceView = ({
                 needsReview={needsReview}
                 activity={activity}
                 timeline={timeline}
+                historicalTimeline={historicalTimeline}
+                timelineAsOf={timelineAsOf}
+                onTimelineAsOf={onTimelineAsOf}
                 timelineLoading={timelineLoading}
                 tab={memoryTab}
                 onSelectTab={onSelectMemoryTab}

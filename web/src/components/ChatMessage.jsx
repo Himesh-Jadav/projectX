@@ -1,4 +1,64 @@
-import { Sparkles, Check, AlertTriangle } from 'lucide-react'
+import { useState } from 'react'
+import { Sparkles, Check, AlertTriangle, Search, GitCompare, Save, MessageCircleQuestion, MessageSquare, ChevronDown } from 'lucide-react'
+import BrandIcon from './Brand'
+
+const AGENT_ACTIONS = {
+  search_memory: { label: 'Search memory', Icon: Search },
+  check_conflict: { label: 'Check conflict', Icon: GitCompare },
+  save_memory: { label: 'Save memory', Icon: Save },
+  ask_user: { label: 'Ask user', Icon: MessageCircleQuestion },
+  answer: { label: 'Answer', Icon: MessageSquare }
+}
+
+const safeStepText = (value) => String(value || '')
+  .replace(/\b[0-9a-f]{24}\b/gi, '')
+  .replace(/\b(?:sk|api)[_-]?[a-z0-9_-]{12,}\b/gi, '')
+  .replace(/[<>`*_#[\]{}]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+const AgentSteps = ({ agent, steps }) => {
+  const [expanded, setExpanded] = useState(false)
+  if (!steps?.length && !agent?.ran) return null
+  const fellBack = Boolean(agent?.fellBack)
+
+  return (
+    <div className="mt-2 agent-steps">
+      <button
+        type="button"
+        aria-expanded={fellBack ? false : expanded}
+        onClick={fellBack ? undefined : () => setExpanded((value) => !value)}
+        className="inline-flex h-7 items-center gap-1.5 rounded-full border border-jet-700 bg-jet-900 px-3 font-mono text-xs text-jet-300 transition-colors hover:border-[#3A4157] hover:bg-jet-800"
+      >
+        <span>{fellBack ? 'Pipeline' : `Agent · ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`}</span>
+        {!fellBack && <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />}
+      </button>
+      {!fellBack && (
+        <div className={`agent-steps-panel ${expanded ? 'is-open' : ''}`} aria-hidden={!expanded}>
+          <ol className="agent-steps-list">
+            {steps.map((step, index) => {
+              const action = AGENT_ACTIONS[step?.action]
+              if (!action) return null
+              const Icon = action.Icon
+              const why = safeStepText(step.why)
+              const summary = safeStepText(step.summary)
+              return (
+                <li key={`${step.action}-${index}`} className="agent-step-row" style={{ '--step-index': index }}>
+                  <Icon className={`h-4 w-4 shrink-0 ${step.action === 'save_memory' ? 'text-neon-300' : 'text-cerulean-300'}`} aria-hidden="true" />
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs text-cerulean-300">{action.label}</div>
+                    {why && <div className="mt-0.5 line-clamp-2 text-xs leading-4 text-jet-300">{why}</div>}
+                    {summary && <div className="mt-0.5 font-mono text-[11px] leading-4 text-jet-400">{summary}</div>}
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const renderInline = (text, prefix) => {
   const pieces = text.split(/(\*\*[^*]+?\*\*|__[^_]+?__|`[^`]+`|\*[^*\n]+?\*|_[^_\n]+?_|\[[^\]]+\]\([^)]+\))/g)
@@ -223,7 +283,9 @@ const ChatMessage = ({
   onWithdrawConflict,
   currentUser,
   selectedMemoryId,
-  busy = false
+  memoryEnabled = true,
+  busy = false,
+  onSelectOption
 }) => {
   const isUser = message.role === 'user'
 
@@ -238,18 +300,21 @@ const ChatMessage = ({
   }
 
   // Assistant response
+  const awaiting = message.awaiting || message.meta?.awaiting
   return (
     <div className="flex w-full items-start gap-3 animate-in fade-in slide-in-from-bottom-2 duration-150">
       {/* 32px avatar tile */}
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-jet-800 text-cerulean-300">
-        <Sparkles className="h-4 w-4" />
+        <BrandIcon className="h-5 w-5" />
       </div>
 
       <div className="min-w-0 max-w-full flex-1">
+        {awaiting && <div className="mb-1.5"><span className="rounded-lg bg-[#11202E] px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-cerulean-300">Needs your answer</span></div>}
         {/* Bubble */}
         <div className="w-fit max-w-full rounded-[18px_18px_18px_6px] border border-jet-700 bg-jet-850 px-[18px] py-3.5 text-base leading-[26px] text-jet-100 shadow-sm [overflow-wrap:anywhere]">
           <AssistantText text={message.text} />
         </div>
+        {awaiting?.options?.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{awaiting.options.slice(0, 3).map((option) => <button key={option} type="button" onClick={() => onSelectOption?.(option)} className="h-9 rounded-full border border-jet-700 bg-jet-900 px-3.5 text-xs text-jet-300 transition-colors hover:border-cerulean-500/50 hover:bg-cerulean-tint hover:text-jet-100">{option}</button>)}</div>}
 
         {/* Memory off note if applicable */}
         {message.memoryOff && (
@@ -257,6 +322,18 @@ const ChatMessage = ({
             Memory off
           </div>
         )}
+
+        {/* Agent steps sit 8px below the reply and before memory chips. */}
+        {memoryEnabled && !message.memoryOff && (() => {
+          const agent = message.agent
+          const storedSteps = message.meta?.agentSteps
+          const ranLive = agent?.ran === true
+          const ranStored = !agent && Array.isArray(storedSteps)
+          if (!ranLive && !ranStored) return null
+          const steps = ranLive ? (agent.steps || []) : storedSteps
+          const displayAgent = ranLive ? agent : (message.meta?.agentFellBack ? { ran: true, fellBack: true } : { ran: true })
+          return <AgentSteps agent={displayAgent} steps={steps} />
+        })()}
 
         {/* Memory chips per section 8.5 */}
         {message.used && message.used.length > 0 && (

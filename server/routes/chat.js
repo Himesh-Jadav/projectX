@@ -117,16 +117,18 @@ router.post('/', async (req, res, next) => {
         turns: history,
         recalled: used,
         reply: async ({ used: agentUsed, changes: agentChanges }) => {
+          const dependentContext = agentChanges.flatMap((change) => (change.dependents ?? []).map((memory) => memory.content ?? memory.text));
           const agentConflicts = agentChanges.filter((entry) => entry?.kind === 'conflict');
           const conflictContext = agentConflicts.map(({ target, pending }) =>
             `A proposed memory conflicts with an existing one. Do not say the new statement is already decided or saved as current. Tell the user the existing statement (“${target.content ?? target.text}”, recorded by ${target.createdByName || 'a teammate'}) conflicts with the new statement (“${pending.content ?? pending.text}”, stated by ${pending.createdByName || speaker}). Ask whether they want to keep the existing statement or override it with the new one. They can also withdraw their proposal using the chat controls.`
           ).join('\n');
           const replyMessages = [
-            { role: 'system', content: buildReplySystemContent({ projectName, speaker, memorySummary: formatRecalledMemories(agentUsed), savedThisTurn: agentChanges.filter((c) => c?.kind === 'created').map(c => ({ kind: 'created', memory: c.memory })), conflictContext }) },
+            { role: 'system', content: buildReplySystemContent({ projectName, speaker, memorySummary: formatRecalledMemories(agentUsed), savedThisTurn: agentChanges.filter((c) => c?.kind === 'created').map(c => ({ kind: 'created', memory: c.memory })), conflictContext }) + (dependentContext.length ? `\nMention that these decisions rested on the invalidated memory and ask whether the user wants to review them: ${dependentContext.join('; ')}` : '') },
             ...history.map(({ role, text }) => ({ role, content: text })),
             { role: 'user', content: message }
           ];
           let text = await callLLM({ role: 'smart', messages: replyMessages });
+          if (dependentContext.length) text += ` ${dependentContext.length} decision${dependentContext.length === 1 ? '' : 's'} rested on that memory: ${dependentContext.map((title) => `“${title}”`).join(', ')}. Would you like to review ${dependentContext.length === 1 ? 'it' : 'them'}?`;
           if (agentConflicts.length) {
             const { target, pending } = agentConflicts[0];
             text = `You previously saved “${target.content ?? target.text}” as the current project decision. You now suggested “${pending.content ?? pending.text}”. Would you like to keep the existing decision or override it with “${pending.content ?? pending.text}”? Choose an option below.`;
@@ -135,10 +137,11 @@ router.post('/', async (req, res, next) => {
         }
       }));
       const agentUsed = outcome.used ?? used;
+      for (const change of outcome.changes ?? []) if (change.dependents?.length) notices.push(`${change.dependents.length} decisions rested on this: ${change.dependents.map((memory) => memory.content ?? memory.text).join('; ')}`);
       res.json({
         reply: outcome.reply,
         used: agentUsed.map((entry) => ({ ...entry, memory: safeMemory(entry.memory) })),
-        changes: (outcome.changes ?? []).filter(c => ['created','invalidated'].includes(c?.kind)).map(c => ({ kind: c.kind, memory: safeMemory(c.memory) })),
+        changes: (outcome.changes ?? []).filter(c => ['created','invalidated'].includes(c?.kind)).map(c => ({ ...c, memory: safeMemory(c.memory), dependents: c.dependents?.map(safeMemory) })),
         conflicts: (outcome.conflicts ?? []).map(c => ({ ...c, pending: safeMemory(c.pending), target: safeMemory(c.target) })),
         notices, agent: { ran: true, fellBack: false, steps: outcome.steps }, awaiting: outcome.awaiting
       });
@@ -168,9 +171,11 @@ router.post('/', async (req, res, next) => {
   const conflictContext = conflicts.map(({ target, pending }) =>
     `A proposed memory conflicts with an existing one. Do not say the new statement is already decided or saved as current. Tell the user the existing statement (“${target.content ?? target.text}”, recorded by ${target.createdByName || 'a teammate'}) conflicts with the new statement (“${pending.content ?? pending.text}”, stated by ${pending.createdByName || speaker}). Ask whether they want to keep the existing statement or override it with the new one. They can also withdraw their proposal using the chat controls.`
   ).join('\n');
+  const dependentContext = changes.flatMap((change) => (change.dependents ?? []).map((memory) => memory.content ?? memory.text));
+  for (const change of changes) if (change.dependents?.length) notices.push(`${change.dependents.length} decisions rested on this: ${change.dependents.map((memory) => memory.content ?? memory.text).join('; ')}`);
   const savedThisTurn = changes.filter((c) => c.kind === 'created');
   const replyMessages = [
-    { role: 'system', content: buildReplySystemContent({ projectName, speaker, memorySummary, savedThisTurn, conflictContext }) },
+    { role: 'system', content: buildReplySystemContent({ projectName, speaker, memorySummary, savedThisTurn, conflictContext }) + (dependentContext.length ? `\nMention that these decisions rested on the invalidated memory and ask whether the user wants to review them: ${dependentContext.join('; ')}` : '') },
     ...history.map(({ role, text }) => ({ role, content: text })),
     { role: 'user', content: message }
   ];
@@ -182,6 +187,7 @@ router.post('/', async (req, res, next) => {
     notices.push('The assistant provider is temporarily unavailable.');
     console.error(`Reply generation failed: ${error.message}`);
   }
+  if (dependentContext.length) reply += ` ${dependentContext.length} decision${dependentContext.length === 1 ? '' : 's'} rested on that memory: ${dependentContext.map((title) => `“${title}”`).join(', ')}. Would you like to review ${dependentContext.length === 1 ? 'it' : 'them'}?`;
   if (conflicts.length) {
     const { target, pending } = conflicts[0];
     const oldValue = target.content ?? target.text;
@@ -192,7 +198,7 @@ router.post('/', async (req, res, next) => {
   res.json({
     reply,
     used: used.map((entry) => ({ ...entry, memory: safeMemory(entry.memory) })),
-    changes,
+    changes: changes.map((change) => ({ ...change, memory: safeMemory(change.memory), dependents: change.dependents?.map(safeMemory) })),
     conflicts: conflicts.map((conflict) => ({ ...conflict, pending: safeMemory(conflict.pending), target: safeMemory(conflict.target) })),
     notices,
     agent: config.agentMode === 'on' ? { ran: true, fellBack: true, steps: [] } : { ran: false, steps: [] }, awaiting: null

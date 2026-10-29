@@ -4,15 +4,16 @@ import { callLLM } from './llm.js';
 import { recallLongTerm, applyItems } from './memoryService.js';
 import { memories } from '../db.js';
 import { hasSecret } from './secrets.js';
+import { sanitizeBasedOn } from './dependencies.js';
 
 const toolList = [
   { name: 'search_memory', args: { query: 'string' } },
   { name: 'check_conflict', args: { statement: 'string' } },
-  { name: 'save_memory', args: { type: 'decision|assumption|constraint|outcome', content: 'string', reason: 'string', confidence: 'number', expiresIn: 'ISO-8601 duration|null', revisitIn: 'ISO-8601 duration|null', action: 'new|duplicate|conflict|invalidate', targetId: 'memory id|null', outcomeOf: 'memory id|null' } },
+  { name: 'save_memory', args: { type: 'decision|assumption|constraint|outcome', content: 'string', reason: 'string', confidence: 'number', expiresIn: 'ISO-8601 duration|null', revisitIn: 'ISO-8601 duration|null', action: 'new|duplicate|conflict|invalidate', targetId: 'memory id|null', outcomeOf: 'memory id|null', basedOn: 'recalled memory id[]' } },
   { name: 'ask_user', args: { question: 'string', options: 'string[0..3]' } },
   { name: 'answer', args: {} }
 ];
-const plannerPrompt = ({ message, turns, recalled, steps }) => `Plan one action. Return only JSON with exactly {"action":"tool name","args":{},"why":"one short sentence"}.\nRules:\n- Prefer answer when nothing needs checking. Small talk, questions, brainstorming and maybe never lead to save_memory.\n- Only save_memory something the user committed to or stated as true. Apply PRD 10.2: questions, brainstorming and maybe are not memories; content is standalone; relative time becomes expiresIn; duplicate means same meaning; conflict means contradiction without retiring old; invalidate means explicitly dropped/wrong/no longer true; never store secrets or private personal details.\n- Use check_conflict before save_memory when a statement touches a topic recalled memories cover.\n- Use ask_user only when two readings lead to different writes. Ask once, with at most 3 short options.\n- Never print memory ids in why or user-facing text. Never claim a memory exists that was not provided.\nTools: ${JSON.stringify(toolList)}\nInput: ${JSON.stringify({ userMessage: message, lastSixTurns: turns.slice(-6), recalledMemories: recalled.map(({ memory }) => ({ id: String(memory._id), type: memory.type, content: memory.content ?? memory.text, reason: memory.reason, author: memory.createdByName, date: memory.createdAt })), steps })}`;
+const plannerPrompt = ({ message, turns, recalled, steps }) => `Plan one action. Return only JSON with exactly {"action":"tool name","args":{},"why":"one short sentence"}.\nRules:\n- Prefer answer when nothing needs checking. Small talk, questions, brainstorming and maybe never lead to save_memory.\n- Only save_memory something the user committed to or stated as true. Apply PRD 10.2: questions, brainstorming and maybe are not memories; content is standalone; relative time becomes expiresIn; duplicate means same meaning; conflict means contradiction without retiring old; invalidate means explicitly dropped/wrong/no longer true; never store secrets or private personal details. Set basedOn ONLY to recalled memory ids the item explicitly rests on, and only when the user's own words give that reason (because, since, given that); otherwise [].\n- Use check_conflict before save_memory when a statement touches a topic recalled memories cover.\n- Use ask_user only when two readings lead to different writes. Ask once, with at most 3 short options.\n- Never print memory ids in why or user-facing text. Never claim a memory exists that was not provided.\nTools: ${JSON.stringify(toolList)}\nInput: ${JSON.stringify({ userMessage: message, lastSixTurns: turns.slice(-6), recalledMemories: recalled.map(({ memory }) => ({ id: String(memory._id), type: memory.type, content: memory.content ?? memory.text, reason: memory.reason, author: memory.createdByName, date: memory.createdAt })), steps })}`;
 const validPlan = (v) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).sort().join(',') === 'action,args,why' && typeof v.action === 'string' && v.args && typeof v.args === 'object' && !Array.isArray(v.args) && typeof v.why === 'string' && v.why.length <= 200 && !hasSecret(v.why) && !/[a-f\d]{24}/i.test(v.why);
 const sanitizeSummary = (s) => String(s).replace(/[a-f\d]{24}/gi, '[memory]').replace(/(?:sk-[A-Za-z0-9_-]{8,}|sk_test_[A-Za-z0-9_-]+)/g, '[secret]').slice(0, 120);
 
@@ -55,7 +56,7 @@ export async function runAgent({ user, project, message, turns = [], recalled = 
         found.push(...rows);
         summary = `${rows.length} matches`;
       } else if (action === 'save_memory') {
-        const expected = ['action','confidence','content','expiresIn','outcomeOf','reason','revisitIn','targetId','type'];
+        const expected = ['action','basedOn','confidence','content','expiresIn','outcomeOf','reason','revisitIn','targetId','type'];
         if (Object.keys(args).sort().join(',') !== expected.join(',')) throw new Error('invalid save fields');
         if (!['decision','assumption','constraint','outcome'].includes(args.type) || typeof args.content !== 'string' || !args.content.trim() || args.content.length > 1000 || hasSecret(args.content) || typeof args.reason !== 'string' || args.reason.length > 1000 || !Number.isFinite(args.confidence) || args.confidence < 0 || args.confidence > 1 || !['new','duplicate','conflict','invalidate'].includes(args.action) || (args.expiresIn !== null && typeof args.expiresIn !== 'string') || (args.revisitIn !== null && typeof args.revisitIn !== 'string') || (args.targetId !== null && typeof args.targetId !== 'string') || (args.outcomeOf !== null && typeof args.outcomeOf !== 'string')) throw new Error('invalid save arguments');
         if (['conflict','invalidate'].includes(args.action) && !args.targetId) throw new Error('targetId required');
@@ -63,7 +64,8 @@ export async function runAgent({ user, project, message, turns = [], recalled = 
           if (!ObjectId.isValid(args.targetId) || !(await memoriesCol.findOne({ _id: new ObjectId(args.targetId), projectId, status: { $in: ['active','pending'] } }))) throw new Error('target is not active or pending in this project');
         }
         if (args.outcomeOf && (!ObjectId.isValid(args.outcomeOf) || !(await memoriesCol.findOne({ _id: new ObjectId(args.outcomeOf), projectId, status: 'active', type: 'decision' })))) throw new Error('outcomeOf is not an active decision in this project');
-        const item = { ...args, expiresAt: args.expiresIn ? expiryDate(args.expiresIn) : null, revisitAfter: args.revisitIn ? expiryDate(args.revisitIn) : null };
+        const recalledIds = [...recalled, ...found].map(({ memory }) => String(memory?._id)).filter(Boolean);
+        const item = { ...args, basedOn: await sanitizeBasedOn(projectId, args.basedOn, recalledIds), recalledIds, expiresAt: args.expiresIn ? expiryDate(args.expiresIn) : null, revisitAfter: args.revisitIn ? expiryDate(args.revisitIn) : null };
         const result = callTool ? await callTool('save_memory', item, { user, project }) : await applyItems({ user, project, items: [item], recalled: [...recalled, ...found] });
         if (result) { if (Array.isArray(result)) written.push(...result.filter(Boolean)); else written.push(result); }
         summary = result?.kind === 'conflict' ? 'proposal held for review' : result?.kind === 'created' ? 'memory saved' : 'memory checked';

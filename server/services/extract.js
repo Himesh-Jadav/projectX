@@ -28,7 +28,7 @@ function validate(payload, base = new Date()) {
     const targetId = item.targetId ?? null;
     if (['duplicate', 'conflict', 'invalidate'].includes(item.action) && (typeof targetId !== 'string' || !targetId)) throw new TypeError(`Item ${index} action ${item.action} requires targetId.`);
     return {
-      ...item, expiresIn: item.expiresIn ?? null, revisitIn: item.revisitIn ?? null,
+      ...item, basedOn: Array.isArray(item.basedOn) ? item.basedOn.filter((id) => typeof id === 'string') : [], expiresIn: item.expiresIn ?? null, revisitIn: item.revisitIn ?? null,
       targetId, outcomeOf: item.outcomeOf ?? null,
       expiresAt: item.action === 'new' && item.expiresIn ? durationDate(item.expiresIn, base) : null,
       revisitAfter: item.action === 'new' && item.revisitIn ? durationDate(item.revisitIn, base) : null
@@ -44,7 +44,7 @@ export async function extractAndReconcile(message, recalledMemories = [], speake
     similarity: memory.similarity ?? null
   }));
   return callLLM({ role: 'fast', json: true, validate, messages: [
-    { role: 'system', content: `${EXTRACT_RECONCILE_SYSTEM_PROMPT}\nAttribute every extracted item to the speaker named in the input; the JSON schema stays unchanged.` },
+    { role: 'system', content: `${EXTRACT_RECONCILE_SYSTEM_PROMPT}\nEach item may include basedOn: recalled memory ids it explicitly rests on. Set it only when the user's own words give the reason using because, since, or given that; otherwise use []. Never invent ids.` },
     { role: 'user', content: JSON.stringify({ speaker, userMessage: message, recalledMemories: context }) }
   ] });
 }

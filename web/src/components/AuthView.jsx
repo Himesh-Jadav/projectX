@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ArrowRight, User, Lock, Mail, AlertTriangle } from 'lucide-react'
+import { Brand } from './Brand'
 
 const FloatingInput = ({
   id,
@@ -89,12 +90,8 @@ const AuthView = ({
   if (inviteToken) {
     return (
       <div className="relative flex min-h-screen w-full flex-col items-center justify-center p-4">
-        {/* Logo at the top of the screen: centred, 24px from top, 40px desktop, 32px mobile */}
-        <div className="absolute top-6 inset-x-0 flex justify-center">
-          <img src="/dark_logo.png" alt="Smaran.ai" className="h-8 sm:h-10 w-auto object-contain" />
-        </div>
-
         <div className="w-full max-w-[400px] rounded-[20px] border border-white/10 bg-[#0A0B10]/60 p-8 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-[20px] text-jet-100">
+          <div className="mb-6 flex justify-center"><Brand /></div>
           <h1 className="font-display mb-2 text-2xl font-semibold tracking-tight text-jet-100">
             {invitePreview ? `Join ${invitePreview.project.name}` : 'Join project'}
           </h1>
@@ -146,13 +143,9 @@ const AuthView = ({
 
   return (
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center p-4">
-      {/* 8.7: Logo at the top of the screen: centred, 24px from top (h-40px desktop, 32px mobile) */}
-      <div className="absolute top-6 inset-x-0 flex justify-center">
-        <img src="/dark_logo.png" alt="Smaran.ai" className="h-8 sm:h-10 w-auto object-contain" />
-      </div>
-
       {/* 8.7: Glass card: centred, width 400, fill rgba(10,11,16,0.62) with blur(20px), border 1px rgba(255,255,255,0.10), radius 20, padding 32 */}
       <div className="w-full max-w-[400px] rounded-[20px] border border-white/10 bg-[#0A0B10]/60 p-8 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-[20px] text-jet-100">
+        <div className="mb-6 flex justify-center"><Brand /></div>
         <div className="mb-6 text-center">
           <h1 className="font-display text-[28px] font-semibold tracking-tight text-jet-100">
             {authMode === 'login' ? 'Welcome back' : 'Create your account'}
@@ -190,7 +183,7 @@ const AuthView = ({
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} className="space-y-4" autoComplete="off">
           {authMode === 'signup' && (
             <div>
               <FloatingInput

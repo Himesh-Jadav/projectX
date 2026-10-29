@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { PanelLeft, BookOpen, Plus, Trash2, ChevronDown, User, LogOut, Settings } from 'lucide-react'
+import { Brand } from './Brand'
 
 const Sidebar = ({
   projectList = [],
@@ -63,14 +64,18 @@ const Sidebar = ({
     >
       {/* 1. Logo row, 64px tall */}
       <div className="flex h-16 shrink-0 items-center justify-between px-1">
-        <a
-          href="#"
-          aria-label="Smaran.ai home"
-          tabIndex={0}
-          className="flex items-center gap-2 focus-visible:outline-2 focus-visible:outline-cerulean-300 rounded-lg"
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar"
+          className="group relative flex items-center rounded-lg focus-visible:outline-2 focus-visible:outline-cerulean-300"
         >
-          <img src="/dark_logo.png" alt="Smaran.ai" className="h-8 w-auto object-contain" />
-        </a>
+          <Brand iconClassName="h-7 w-7" wordmarkClassName="text-2xl" />
+          <span className="absolute left-0 flex h-8 w-8 items-center justify-center rounded-lg bg-jet-800 text-jet-100 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+            <PanelLeft className="h-4 w-4" />
+          </span>
+        </button>
         {onToggleCollapse && (
           <button
             type="button"
