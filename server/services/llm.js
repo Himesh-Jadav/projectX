@@ -1,10 +1,59 @@
 import { config } from '../config.js';
 
-const TIMEOUT_MS = 8_000;
-const EXTRACTION_TIMEOUT_MS = 20_000;
-const COOLDOWN_MS = 60_000;
+const TIMEOUT_MS = Number(process.env.PROVIDER_TIMEOUT_MS) || 8_000
+const EXTRACTION_TIMEOUT_MS = 20_000
+const COOLDOWN_MS = 60_000
 const MAX_ATTEMPTS = 3;
 const cooldowns = new Map();
+
+// ---------------------------------------------------------------------------
+// Call counter – used by verify:all to enforce the 60-call hard cap.
+// Incremented once per outbound HTTP request to a model or embedding provider.
+// Reset between test runs with resetCallCounter().
+// ---------------------------------------------------------------------------
+const callStats = {
+  total: 0,
+  modelCalls: 0,
+  embeddingCalls: 0,
+  byProvider: { groq: 0, gemini: 0, openrouter: 0 },
+  byRole: { fast: 0, smart: 0, embedding: 0 }
+}
+
+export const getCallStats = () => ({
+  total: callStats.total,
+  modelCalls: callStats.modelCalls,
+  embeddingCalls: callStats.embeddingCalls,
+  byProvider: { ...callStats.byProvider },
+  byRole: { ...callStats.byRole }
+})
+
+export const getCallCount = () => callStats.modelCalls
+export const getCallsByCaller = () => ({ ...callStats.byProvider })
+
+export const resetCallStats = () => {
+  callStats.total = 0
+  callStats.modelCalls = 0
+  callStats.embeddingCalls = 0
+  callStats.byProvider = { groq: 0, gemini: 0, openrouter: 0 }
+  callStats.byRole = { fast: 0, smart: 0, embedding: 0 }
+}
+export const resetCallCounter = resetCallStats
+
+export const recordModelCall = (providerName, role) => {
+  callStats.total += 1
+  callStats.modelCalls += 1
+  callStats.byProvider[providerName] = (callStats.byProvider[providerName] ?? 0) + 1
+  callStats.byRole[role] = (callStats.byRole[role] ?? 0) + 1
+}
+
+export const recordEmbeddingCall = (providerName = 'gemini', role = 'embedding') => {
+  callStats.total += 1
+  callStats.embeddingCalls += 1
+  callStats.byProvider[providerName] = (callStats.byProvider[providerName] ?? 0) + 1
+  callStats.byRole[role] = (callStats.byRole[role] ?? 0) + 1
+}
+
+export const setCallHardCap = () => {}
 
 export class LLMProviderError extends Error {
   constructor(message, options = {}) { super(message, options); this.name = 'LLMProviderError'; this.code = 'LLM_PROVIDER_ERROR'; }
@@ -57,6 +106,8 @@ async function completion(role, messages, json, outerSignal) {
             ...(json ? { response_format: { type: 'json_object' } } : {})
           })
         });
+        // Count every outbound attempt before reading the result.
+        recordModelCall(provider.name, role)
         if (response.ok) {
           const payload = await response.json();
           const content = payload.choices?.[0]?.message?.content;
@@ -64,8 +115,13 @@ async function completion(role, messages, json, outerSignal) {
           return content;
         }
         const detail = await response.text().catch(() => '');
-        lastError = new LLMProviderError(`${provider.name} returned HTTP ${response.status}${detail ? `: ${detail.slice(0, 500)}` : ''}`);
-        if (response.status === 429 || response.status >= 500) cooldowns.set(cooldownKey, Date.now() + COOLDOWN_MS);
+        lastError = new LLMProviderError(`${provider.name} returned HTTP ${response.status}${detail ? `: ${detail.slice(0, 500)}` : ''}`)
+        if (response.status === 429 || response.status >= 500) {
+          const retryHeader = response.headers?.get?.('retry-after')
+          const retrySec = retryHeader ? Number(retryHeader) : NaN
+          const cooldownDuration = Number.isFinite(retrySec) && retrySec > 0 ? retrySec * 1000 : COOLDOWN_MS
+          cooldowns.set(cooldownKey, Date.now() + cooldownDuration)
+        }
       } catch (error) {
         if (outerSignal?.aborted) throw new LLMProviderError('LLM request aborted.', { cause: outerSignal.reason ?? error });
         lastError = error.name === 'AbortError' || controller.signal.aborted

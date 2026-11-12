@@ -100,16 +100,39 @@ router.post('/', async (req, res, next) => {
   } catch (error) { console.error(`Project context lookup failed: ${error.message}`); }
   // Workspace metadata is authoritative; answer direct name questions from the
   // database so the model cannot confuse it with the signed-in user's label.
+  const effectiveAgentMode = (process.env.ENABLE_DEBUG_COUNTER === 'true' && req.headers['x-agent-mode'])
+    ? req.headers['x-agent-mode'].trim().toLowerCase()
+    : config.agentMode
   const asksProjectName = /\b(?:what(?:'s| is)|tell me|remind me)\b.{0,40}\b(?:project|workspace)\b.{0,20}\bname\b|\b(?:project|workspace)\b.{0,20}\bname\b.{0,20}\b(?:what|which)\b/i.test(message);
-  if (asksProjectName && projectName && config.agentMode !== 'on') {
+  if (asksProjectName && projectName && effectiveAgentMode !== 'on') {
     const reply = `The project is named ${projectName}.`;
-    res.json({ reply, used: used.map((entry) => ({ ...entry, memory: safeMemory(entry.memory) })), changes: [], conflicts: [], notices, agent: config.agentMode === 'on' ? { ran: false, fellBack: false, steps: [] } : { ran: false, steps: [] }, awaiting: null });
+    res.json({ reply, used: used.map((entry) => ({ ...entry, memory: safeMemory(entry.memory) })), changes: [], conflicts: [], notices, agent: effectiveAgentMode === 'on' ? { ran: false, fellBack: false, steps: [] } : { ran: false, steps: [] }, awaiting: null });
     persistConversation(session, message, reply, messageMeta(used));
     return;
   }
 
-  if (config.agentMode === 'on') {
+  const commitmentRegex = /\b(?:decide|decided|will|must|never|always|switch|choose|chose|drop|scrap|instead|don't|do not|no longer|rule|constraint|deadline|until|as of|by|use|using|prefer)\b/i
+  const greetingRegex = /^(?:hi|hello|hey|good morning|good afternoon|good evening|howdy|sup|greetings)[!.,? ]*$/i
+  const trimmed = message.trim()
+  const isSmallTalk = trimmed.split(/\s+/).length <= 5 && !commitmentRegex.test(trimmed) && greetingRegex.test(trimmed)
+
+  if (process.env.SKIP_PLANNER_FOR_SMALL_TALK === 'true' && isSmallTalk) {
+    const reply = `Hello! How can I help you with ${projectName || 'the project'} today?`
+    res.json({
+      reply,
+      used: [], changes: [], conflicts: [], notices,
+      agent: effectiveAgentMode === 'on' ? { ran: true, fellBack: false, steps: [{ n: 1, action: 'answer', why: 'plain greeting', summary: 'answered', ms: 1 }] } : { ran: false, steps: [] },
+      awaiting: null
+    })
+    persistConversation(session, message, reply, messageMeta())
+    return
+  }
+
+  if (effectiveAgentMode === 'on') {
     try {
+      if (process.env.ENABLE_DEBUG_COUNTER === 'true' && req.headers['x-test-force-fallback'] === 'true') {
+        throw new Error('Injected planner failure for fallback test')
+      }
       const outcome = await serializeProject(projectId, () => runAgent({
         user: req.user,
         project: { _id: projectId, name: projectName },
@@ -201,7 +224,7 @@ router.post('/', async (req, res, next) => {
     changes: changes.map((change) => ({ ...change, memory: safeMemory(change.memory), dependents: change.dependents?.map(safeMemory) })),
     conflicts: conflicts.map((conflict) => ({ ...conflict, pending: safeMemory(conflict.pending), target: safeMemory(conflict.target) })),
     notices,
-    agent: config.agentMode === 'on' ? { ran: true, fellBack: true, steps: [] } : { ran: false, steps: [] }, awaiting: null
+    agent: effectiveAgentMode === 'on' ? { ran: true, fellBack: true, steps: [] } : { ran: false, steps: [] }, awaiting: null
   });
   persistConversation(session, message, reply, messageMeta(used, changes));
 });

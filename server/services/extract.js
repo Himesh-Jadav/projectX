@@ -42,9 +42,10 @@ export async function extractAndReconcile(message, recalledMemories = [], speake
   const context = recalledMemories.map(({ memory }) => ({
     id: String(memory._id), type: memory.type, content: memory.content ?? memory.text, reason: memory.reason, status: memory.status,
     similarity: memory.similarity ?? null
-  }));
-  return callLLM({ role: 'fast', json: true, validate, messages: [
+  }))
+  const role = process.env.PREFER_FAST_MODEL_FOR_EXTRACTION === 'false' ? 'smart' : 'fast'
+  return callLLM({ role, json: true, validate, messages: [
     { role: 'system', content: `${EXTRACT_RECONCILE_SYSTEM_PROMPT}\nEach item may include basedOn: recalled memory ids it explicitly rests on. Set it only when the user's own words give the reason using because, since, or given that; otherwise use []. Never invent ids.` },
     { role: 'user', content: JSON.stringify({ speaker, userMessage: message, recalledMemories: context }) }
-  ] });
+  ] })
 }

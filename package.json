@@ -19,6 +19,7 @@
     "verify": "npm run verify:reply-markers && npm run verify:reply-greeting && npm run verify:step1",
     "smoke": "node server/scripts/smoke.js",
     "verify:step1": "node server/scripts/demo-check.js",
+    "verify:all": "node server/scripts/verify-all.mjs",
     "demo:reset": "node server/scripts/reset.js",
     "start": "node server/index.js",
     "test": "node --test server/test/*.test.js",

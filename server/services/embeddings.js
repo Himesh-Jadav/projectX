@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 import { config } from '../config.js';
+import { recordEmbeddingCall, getCallStats, resetCallStats } from './llm.js';
+
+export const getEmbeddingCallCount = () => getCallStats().embeddingCalls
+export const resetEmbeddingCounter = () => resetCallStats()
 
 const cache = new Map();
 const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${config.embeddingModel}:embedContent`;
@@ -16,6 +20,7 @@ export async function embed(text, taskType) {
   for (const key of config.geminiApiKeys) {
     let response;
     try {
+      recordEmbeddingCall('gemini', 'embedding')
       response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': key },

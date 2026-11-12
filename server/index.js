@@ -12,6 +12,7 @@ import authRouter from './routes/auth.js';
 import projectsRouter from './routes/projects.js';
 import conversationsRouter from './routes/conversations.js';
 import { startRealtime } from './services/realtime.js';
+import { getCallStats, resetCallStats } from './services/llm.js';
 
 const app = express();
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -42,6 +43,16 @@ app.get('/api/health', async (_req, res) => {
     res.status(503).json({ status: 'error', database: 'unavailable', error: error.message });
   }
 });
+
+if (process.env.ENABLE_DEBUG_COUNTER === 'true') {
+  app.get('/api/debug/call-counter', (_req, res) => {
+    res.json(getCallStats())
+  })
+  app.post('/api/debug/call-counter/reset', (_req, res) => {
+    resetCallStats()
+    res.json({ ok: true })
+  })
+}
 
 if (existsSync(webDist)) app.use(express.static(webDist));
 if (existsSync(webDist)) app.get('*', (_req, res) => res.sendFile(resolve(webDist, 'index.html')));
