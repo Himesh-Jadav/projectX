@@ -72,7 +72,10 @@ export async function recentMessages(session) {
   } catch (error) {
     try {
       await connect();
-      const rows = await messages.find({ projectId: String(session.projectId), userId: String(session.userId), sessionId: String(session.sessionId) }).sort({ createdAt: -1 }).limit(40).toArray();
+      const filter = session.sessionId === 'team'
+        ? { projectId: String(session.projectId), sessionId: 'team' }
+        : { projectId: String(session.projectId), userId: String(session.userId), sessionId: String(session.sessionId) };
+      const rows = await messages.find(filter).sort({ createdAt: -1 }).limit(40).toArray();
       return rows.reverse();
     } catch (mongoError) { console.error(`MongoDB history read failed: ${mongoError.message || error.message}`); return []; }
   }
@@ -88,7 +91,9 @@ export async function appendRecentMessages(session, exchange) {
 
 export async function pageMessages({ userId, projectId, sessionId, before, limit = 40 }) {
   await connect();
-  const filter = { userId: String(userId), projectId: String(projectId), sessionId: String(sessionId) };
+  const filter = sessionId === 'team'
+    ? { projectId: String(projectId), sessionId: 'team' }
+    : { userId: String(userId), projectId: String(projectId), sessionId: String(sessionId) };
   if (before) filter.createdAt = { $lt: before };
   const rows = await messages.find(filter).sort({ createdAt: -1 }).limit(limit + 1).toArray();
   const hasMore = rows.length > limit;

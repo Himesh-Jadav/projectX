@@ -69,6 +69,15 @@ test('thread reads are isolated by user, project, and session', async () => {
   assert.equal(redis.rows.has(threadCacheKey({ userId: 'user-b', projectId: 'project-a', sessionId: 'session-a' })), false);
 });
 
+test('team thread reads are shared across users within the same project', async () => {
+  const docs = [{ userId: 'user-a', projectId: 'project-a', sessionId: 'team', role: 'user', text: 'shared team message', createdAt: new Date() }];
+  const redis = fakeRedis();
+  const messages = await loadRecentThread({ userId: 'user-b', projectId: 'project-a', sessionId: 'team', redis, collection: fakeCollection(docs) });
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].text, 'shared team message');
+  assert.equal(redis.rows.has(threadCacheKey({ userId: 'user-b', projectId: 'project-a', sessionId: 'team' })), true);
+});
+
 test('failed MongoDB persistence is retried once and does not throw into the chat path', async () => {
   let attempts = 0;
   const succeeded = await persistMessagePair({ session: { userId: 'u', projectId: 'p', sessionId: 's' }, input: 'hello', reply: 'hi', meta: { usedMemoryIds: [], changes: [], agentSteps: [] }, secretGuard: () => false, retryDelayMs: 0, collection: { async insertMany() { attempts += 1; throw new Error('mongo unavailable'); } }, wait: async () => {} });

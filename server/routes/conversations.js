@@ -14,8 +14,8 @@ export async function presentRows(rows, projectId) {
   const memoryRows = ids.length ? await memories.find({ _id: { $in: ids }, projectId: String(projectId) }).toArray() : [];
   const byId = new Map(memoryRows.map((memory) => [String(memory._id), memory]));
   return rows.map((row) => {
-    const { _id, userId, projectId: _projectId, sessionId, role, text, createdAt, meta = {} } = row;
-    const { embedding: _embedding, ...safeRow } = { _id, userId, projectId: _projectId, sessionId, role, text, createdAt, meta };
+    const { _id, userId, projectId: _projectId, sessionId, speaker, role, text, createdAt, meta = {} } = row;
+    const { embedding: _embedding, ...safeRow } = { _id, userId, projectId: _projectId, sessionId, speaker, role, text, createdAt, meta };
     return {
       ...safeRow,
       used: (meta.usedMemoryIds ?? []).map((id) => byId.get(String(id))).filter(Boolean).map((memory) => ({ memory })),
@@ -48,7 +48,9 @@ router.get('/:sessionId/messages', async (req, res, next) => {
     if (!Number.isInteger(rawLimit) || rawLimit < 1) return res.status(400).json({ error: 'limit must be a positive integer.' });
     const limit = Math.min(40, rawLimit);
     if (!beforeDate && limit === 40) {
-      const filter = { userId, projectId, sessionId };
+      const filter = sessionId === 'team'
+        ? { projectId, sessionId: 'team' }
+        : { userId, projectId, sessionId };
       const [rows, count] = await Promise.all([
         recentMessages({ userId, projectId, sessionId }),
         messageCollection.countDocuments(filter)

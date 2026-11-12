@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
-import { Sparkles, Check, X, Users, User } from 'lucide-react'
+import { Sparkles, Check, X } from 'lucide-react'
 import Topbar from './Topbar'
 import ChatMessage, { TypingIndicator } from './ChatMessage'
 import ChatComposer from './ChatComposer'
@@ -121,7 +121,8 @@ const WorkspaceView = ({
         onOpenInvitations={onOpenInvitations}
         onNewSession={onNewSession}
         hasMessages={hasMessages}
-        isLive={true}
+        conversationScope={conversationScope}
+        onChangeConversationScope={onChangeConversationScope}
       />
 
       {/* Main body: Chat column + optional docked Memory panel */}
@@ -134,52 +135,6 @@ const WorkspaceView = ({
             className="flex-1 overflow-y-auto px-4 sm:px-6 pt-4 pb-12 scrollbar-thin"
           >
             <div className="mx-auto w-full max-w-[768px] space-y-6">
-              {/* Scope selector */}
-              <div className="flex items-center justify-between border-b border-jet-650/60 pb-3">
-                <div>
-                  <span className="font-sans text-xs font-semibold uppercase tracking-[0.08em] text-jet-300">
-                    {conversationScope === 'team' ? 'Team conversation' : 'Personal conversation'}
-                  </span>
-                  <p className="text-xs text-jet-400">
-                    {conversationScope === 'team'
-                      ? 'Everyone in this project shares this recent conversation.'
-                      : 'Only you can see this recent conversation.'}
-                  </p>
-                </div>
-                <div
-                  role="group"
-                  aria-label="Conversation scope"
-                  className="flex h-8 items-center rounded-xl border border-jet-700 bg-jet-900 p-0.5 gap-0.5"
-                >
-                  <button
-                    type="button"
-                    aria-pressed={conversationScope === 'personal'}
-                    onClick={() => onChangeConversationScope('personal')}
-                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
-                      conversationScope === 'personal'
-                        ? 'bg-jet-800 text-cerulean-300 shadow'
-                        : 'text-jet-400 hover:text-jet-200'
-                    }`}
-                  >
-                    <User className="h-3 w-3" />
-                    <span>Personal</span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={conversationScope === 'team'}
-                    onClick={() => onChangeConversationScope('team')}
-                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
-                      conversationScope === 'team'
-                        ? 'bg-jet-800 text-cerulean-300 shadow'
-                        : 'text-jet-400 hover:text-jet-200'
-                    }`}
-                  >
-                    <Users className="h-3 w-3" />
-                    <span>Team</span>
-                  </button>
-                </div>
-              </div>
-
               {hasMessages && <AttentionCard items={attention} onAction={onAttentionAction} onDismiss={onDismissAttention} onMore={onOpenAllMemories} />}
 
               {/* Page error banner */}

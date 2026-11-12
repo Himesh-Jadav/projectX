@@ -68,7 +68,7 @@ router.post('/', async (req, res, next) => {
   const projectId = String(req.params.projectId);
   const speaker = req.user.username;
   const effectiveSessionId = scope === 'team' ? 'team' : sessionId;
-  const session = { userId, projectId, sessionId: effectiveSessionId };
+  const session = { userId, projectId, sessionId: effectiveSessionId, speaker };
   const notices = [];
   if (hasSecret(message)) {
     notices.push('Not saved: looks like a secret.');

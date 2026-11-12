@@ -1,7 +1,9 @@
 export const hiddenSecretText = '[hidden: looks like a secret]';
 
 export const threadCacheKey = ({ userId, projectId, sessionId }) =>
-  `thread:${encodeURIComponent(String(userId))}:${encodeURIComponent(String(projectId))}:${encodeURIComponent(String(sessionId))}`;
+  sessionId === 'team'
+    ? `thread:team:${encodeURIComponent(String(projectId))}`
+    : `thread:${encodeURIComponent(String(userId))}:${encodeURIComponent(String(projectId))}:${encodeURIComponent(String(sessionId))}`;
 
 export async function loadRecentThread({ userId, projectId, sessionId, redis, collection, limit = 40 }) {
   const key = threadCacheKey({ userId, projectId, sessionId });
@@ -10,7 +12,10 @@ export async function loadRecentThread({ userId, projectId, sessionId, redis, co
     const cached = cachedRows.map((row) => JSON.parse(row));
     if (cached.length >= limit) return cached;
   } catch {}
-  const rows = await collection.find({ userId: String(userId), projectId: String(projectId), sessionId: String(sessionId) })
+  const filter = sessionId === 'team'
+    ? { projectId: String(projectId), sessionId: 'team' }
+    : { userId: String(userId), projectId: String(projectId), sessionId: String(sessionId) };
+  const rows = await collection.find(filter)
     .sort({ createdAt: -1 }).limit(limit).toArray();
   rows.reverse();
   try {

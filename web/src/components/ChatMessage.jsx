@@ -95,6 +95,109 @@ const renderInline = (text, prefix) => {
   })
 }
 
+const ConflictCard = ({ conflict, busy = false, onResolveConflict, onWithdrawConflict }) => {
+  const [actionStatus, setActionStatus] = useState(null)
+  const pendingMemory = conflict?.pending
+  const targetMemory = conflict?.target
+
+  if (!pendingMemory) return null
+
+  const handleOverrideClick = async () => {
+    if (busy || actionStatus) return
+    setActionStatus('overriding')
+    try {
+      await onResolveConflict?.(pendingMemory, 'override', targetMemory)
+      setActionStatus('overridden')
+    } catch {
+      setActionStatus(null)
+    }
+  }
+
+  const handleWithdrawClick = async () => {
+    if (busy || actionStatus) return
+    setActionStatus('withdrawing')
+    try {
+      await onWithdrawConflict?.(pendingMemory, targetMemory)
+      setActionStatus('withdrawn')
+    } catch {
+      setActionStatus(null)
+    }
+  }
+
+  if (actionStatus === 'overridden') {
+    return (
+      <div className="flex items-center gap-2 rounded-2xl border border-neon-600/40 bg-neon-950/25 p-3.5 text-xs font-mono text-neon-300">
+        <Check className="h-4 w-4 shrink-0 text-neon-400" />
+        <span>Overridden: New decision updated in project memory</span>
+      </div>
+    )
+  }
+
+  if (actionStatus === 'withdrawn') {
+    return (
+      <div className="flex items-center gap-2 rounded-2xl border border-jet-700 bg-jet-900/60 p-3.5 text-xs font-mono text-jet-300">
+        <Check className="h-4 w-4 shrink-0 text-cerulean-400" />
+        <span>Withdrawn: Proposal dismissed and current decision kept</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#642142] bg-[#231523] p-4 text-jet-100 shadow-sm">
+      <div className="flex items-center justify-between text-xs font-mono">
+        <span className="font-semibold text-neon-300 tracking-wider">
+          CONFLICT
+        </span>
+        <span className="text-jet-400">
+          {pendingMemory.createdByName ? `by ${pendingMemory.createdByName}` : ''}
+          {pendingMemory.createdAt ? ` · ${new Date(pendingMemory.createdAt).toLocaleDateString()}` : ''}
+        </span>
+      </div>
+
+      <div className="mt-2 space-y-1">
+        <p className="text-[15px] font-medium text-jet-100">
+          {pendingMemory.content}
+        </p>
+
+        {(targetMemory?.content || targetMemory?.text) && (
+          <p className="text-xs text-jet-400">
+            Conflicts with existing: “{targetMemory.content || targetMemory.text}”
+          </p>
+        )}
+
+        {pendingMemory.reason && (
+          <p className="mt-1 text-[13px] text-jet-300">
+            {pendingMemory.reason}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-3 flex items-center gap-2 pt-2 border-t border-[#642142]/40">
+        <button
+          type="button"
+          tabIndex={0}
+          disabled={busy || Boolean(actionStatus)}
+          onClick={handleOverrideClick}
+          aria-label="Override existing decision with new proposal"
+          className="h-9 rounded-xl bg-neon-500 px-4 text-sm font-medium text-jet-950 transition-all hover:bg-neon-400 hover:shadow-[0_0_20px_rgba(255,61,139,0.35)] active:translate-y-px active:bg-neon-600 disabled:bg-jet-800 disabled:text-jet-500"
+        >
+          {actionStatus === 'overriding' ? 'Overriding…' : 'Override'}
+        </button>
+        <button
+          type="button"
+          tabIndex={0}
+          disabled={busy || Boolean(actionStatus)}
+          onClick={handleWithdrawClick}
+          aria-label="Withdraw proposal and keep existing decision"
+          className="h-9 rounded-xl border border-jet-700 bg-transparent px-4 text-sm font-medium text-jet-100 transition hover:bg-jet-800 active:translate-y-px disabled:opacity-50"
+        >
+          {actionStatus === 'withdrawing' ? 'Withdrawing…' : 'Withdraw'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 const tableCells = (line) => {
   const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
   while (cells.length && !cells[0]) cells.shift()
@@ -373,75 +476,15 @@ const ChatMessage = ({
         {/* Conflict card inline per section 8.5 */}
         {message.conflicts && message.conflicts.length > 0 && (
           <div className="mt-4 space-y-3">
-            {message.conflicts.map((conflict) => {
-              const pendingMemory = conflict.pending
-              if (!pendingMemory) return null
-              const canResolve = conflict.canResolveNow !== false
-              const isAuthor = pendingMemory.userId === currentUser?.id
-
-              return (
-                <div
-                  key={String(pendingMemory._id || Math.random())}
-                  className="rounded-2xl border border-[#642142] bg-[#231523] p-4 text-jet-100"
-                >
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="font-semibold text-neon-300 tracking-wider">
-                      CONFLICT
-                    </span>
-                    <span className="text-jet-400">
-                      {pendingMemory.createdByName ? `by ${pendingMemory.createdByName}` : ''}
-                      {pendingMemory.createdAt ? ` · ${new Date(pendingMemory.createdAt).toLocaleDateString()}` : ''}
-                    </span>
-                  </div>
-
-                  <p className="mt-2 text-[15px] font-medium text-jet-100">
-                    {pendingMemory.content}
-                  </p>
-
-                  {pendingMemory.reason && (
-                    <p className="mt-1 text-[13px] text-jet-300">
-                      {pendingMemory.reason}
-                    </p>
-                  )}
-
-                  <div className="mt-3 flex items-center gap-2 pt-2 border-t border-[#642142]/40">
-                    {canResolve ? (
-                      <>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => onResolveConflict && onResolveConflict(pendingMemory, 'override')}
-                          className="h-9 rounded-xl bg-neon-500 px-4 text-sm font-medium text-jet-950 transition-all hover:bg-neon-400 hover:shadow-[0_0_20px_rgba(255,61,139,0.35)] active:translate-y-px active:bg-neon-600 disabled:bg-jet-800 disabled:text-jet-500"
-                        >
-                          Override
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => onResolveConflict && onResolveConflict(pendingMemory, 'keep')}
-                          className="h-9 rounded-xl border border-jet-700 bg-transparent px-4 text-sm font-medium text-jet-100 transition hover:bg-jet-800 active:translate-y-px"
-                        >
-                          Keep
-                        </button>
-                      </>
-                    ) : isAuthor ? (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => onWithdrawConflict && onWithdrawConflict(pendingMemory)}
-                        className="h-9 rounded-xl bg-transparent px-4 text-sm font-medium text-jet-300 hover:bg-jet-800 hover:text-jet-100 transition-colors"
-                      >
-                        Withdraw
-                      </button>
-                    ) : (
-                      <span className="text-xs text-jet-300">
-                        Waiting for {conflict.targetAuthorName || conflict.target?.createdByName || 'author'} review
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+            {message.conflicts.map((conflict) => (
+              <ConflictCard
+                key={String(conflict.pending?._id || Math.random())}
+                conflict={conflict}
+                busy={busy}
+                onResolveConflict={onResolveConflict}
+                onWithdrawConflict={onWithdrawConflict}
+              />
+            ))}
           </div>
         )}
 
@@ -471,7 +514,7 @@ const ChatMessage = ({
 export const TypingIndicator = () => (
   <div className="flex w-full items-start gap-3 animate-in fade-in duration-150">
     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-jet-800 text-cerulean-300">
-      <Sparkles className="h-4 w-4" />
+      <BrandIcon className="h-5 w-5" />
     </div>
     <div className="flex h-10 items-center gap-1.5 rounded-[18px_18px_18px_6px] border border-jet-700 bg-jet-850 px-4">
       <span className="h-1.5 w-1.5 rounded-full bg-cerulean-400 animate-pulse" />

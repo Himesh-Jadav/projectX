@@ -1,4 +1,4 @@
-import { Menu, BookOpen, Plus, Wind } from 'lucide-react'
+import { Menu, BookOpen, Plus, Wind, User, Users } from 'lucide-react'
 import { useAmbient } from './AmbientContext'
 
 const Topbar = ({
@@ -13,7 +13,8 @@ const Topbar = ({
   onOpenInvitations,
   onNewSession,
   hasMessages = false,
-  isLive = true
+  conversationScope = 'personal',
+  onChangeConversationScope
 }) => {
   const { ambient, toggleAmbient } = useAmbient()
 
@@ -29,6 +30,7 @@ const Topbar = ({
       <div className="flex items-center gap-3">
         <button
           type="button"
+          tabIndex={0}
           onClick={onOpenMobileSidebar}
           aria-label="Open navigation menu"
           className="flex h-9 w-9 items-center justify-center rounded-xl text-jet-400 hover:bg-jet-800 hover:text-jet-100 lg:hidden transition-colors"
@@ -42,30 +44,53 @@ const Topbar = ({
         >
           {projectName}
         </span>
-
-        {/* Live indicator per section 8.3 */}
-        <div className="flex items-center gap-1.5 ml-1">
-          {isLive ? (
-            <>
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-neon-500 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-neon-500" />
-              </span>
-              <span className="font-mono text-xs text-jet-400">Live</span>
-            </>
-          ) : (
-            <>
-              <span className="h-2 w-2 rounded-full border border-jet-500 inline-block" />
-              <span className="font-mono text-xs text-jet-500">Polling</span>
-            </>
-          )}
-        </div>
       </div>
 
       {/* Right controls */}
       <div className="flex items-center gap-2">
+        {/* Scope selector toggle */}
+        {onChangeConversationScope && (
+          <div
+            role="group"
+            aria-label="Conversation scope"
+            className="flex h-9 items-center rounded-xl border border-jet-700 bg-jet-900 p-0.5 gap-0.5 mr-1"
+          >
+            <button
+              type="button"
+              tabIndex={0}
+              aria-pressed={conversationScope === 'personal'}
+              aria-label="Switch to personal conversation scope"
+              onClick={() => onChangeConversationScope('personal')}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                conversationScope === 'personal'
+                  ? 'bg-jet-800 text-cerulean-300 shadow'
+                  : 'text-jet-400 hover:text-jet-200'
+              }`}
+            >
+              <User className="h-3.5 w-3.5" />
+              <span>Personal</span>
+            </button>
+            <button
+              type="button"
+              tabIndex={0}
+              aria-pressed={conversationScope === 'team'}
+              aria-label="Switch to team conversation scope"
+              onClick={() => onChangeConversationScope('team')}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                conversationScope === 'team'
+                  ? 'bg-jet-800 text-cerulean-300 shadow'
+                  : 'text-jet-400 hover:text-jet-200'
+              }`}
+            >
+              <Users className="h-3.5 w-3.5" />
+              <span>Team</span>
+            </button>
+          </div>
+        )}
+
         <button
           type="button"
+          tabIndex={0}
           onClick={onNewSession}
           aria-label="New session"
           className="flex h-9 items-center gap-1.5 rounded-xl border border-jet-700 bg-transparent px-3 text-xs font-medium text-jet-100 hover:bg-jet-800 hover:border-[#3A4157] active:translate-y-px transition-all"

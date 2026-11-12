@@ -517,6 +517,7 @@ const AppContent = () => {
         method: 'POST',
         body: JSON.stringify({ sessionId, scope: conversationScope, message: text, memoryEnabled })
       })
+      setBusy(false)
       setMessages((items) => [
         ...items,
         {
@@ -539,8 +540,9 @@ const AppContent = () => {
       else if (savedCount) notify(`${savedCount} ${savedCount === 1 ? 'memory' : 'memories'} saved`)
       else if ((result.conflicts || []).length) notify('Conflict held for your review.', 'neutral')
       else if ((result.notices || []).length) notify(result.notices[0], 'warning')
-      await refreshMemories().catch(() => {})
+      void refreshMemories().catch(() => {})
     } catch (error) {
+      setBusy(false)
       setMessages((items) => [
         ...items,
         {
@@ -556,45 +558,61 @@ const AppContent = () => {
     }
   }
 
-  const handleResolveConflict = async (memory, action) => {
+  const handleResolveConflict = async (memory, action, target) => {
     if (!memory?._id) return
-    setBusy(true)
     try {
       await api(projectPath(`/memories/${idOf(memory)}/resolve`), {
         method: 'POST',
         body: JSON.stringify({ action })
       })
-      setMessages((items) =>
-        items.map((msg) => ({
+      setMessages((items) => [
+        ...items.map((msg) => ({
           ...msg,
           conflicts: (msg.conflicts || []).filter(({ pending }) => idOf(pending) !== idOf(memory))
-        }))
-      )
+        })),
+        {
+          role: 'assistant',
+          text: action === 'override'
+            ? `Decision updated: Overrode previous decision with “${memory.content}”. The prior choice is in the timeline.`
+            : `Retained current decision. The proposal “${memory.content}” was dismissed.`,
+          localId: crypto.randomUUID()
+        }
+      ])
       notify(action === 'override' ? 'Decision updated. The previous choice is in the timeline.' : 'Kept the current decision.')
-      await refreshMemories()
+      void refreshMemories().catch(() => {})
       if (memoryTab === 'timeline') loadTimeline()
     } catch (error) {
       notify(error.message, 'warning')
-    } finally {
-      setBusy(false)
     }
   }
 
-  const handleWithdrawConflict = async (memory) => {
+  const handleWithdrawConflict = async (memory, target) => {
     if (!memory?._id) return
     try {
-      await api(projectPath(`/memories/${idOf(memory)}/withdraw`), {
-        method: 'POST',
-        body: JSON.stringify({})
-      })
-      setMessages((items) =>
-        items.map((msg) => ({
+      try {
+        await api(projectPath(`/memories/${idOf(memory)}/withdraw`), {
+          method: 'POST',
+          body: JSON.stringify({})
+        })
+      } catch {
+        await api(projectPath(`/memories/${idOf(memory)}/resolve`), {
+          method: 'POST',
+          body: JSON.stringify({ action: 'keep' })
+        })
+      }
+      setMessages((items) => [
+        ...items.map((msg) => ({
           ...msg,
           conflicts: (msg.conflicts || []).filter(({ pending }) => idOf(pending) !== idOf(memory))
-        }))
-      )
+        })),
+        {
+          role: 'assistant',
+          text: `Proposal withdrawn: Dismissed proposal “${memory.content}”. The existing decision remains active.`,
+          localId: crypto.randomUUID()
+        }
+      ])
       notify('Your pending memory was withdrawn.', 'neutral')
-      await refreshMemories()
+      void refreshMemories().catch(() => {})
     } catch (error) {
       notify(error.message, 'warning')
     }
