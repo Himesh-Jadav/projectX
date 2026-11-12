@@ -31,7 +31,7 @@
 
 ## ✨ Overview
 
-**Smaran.ai** is a workspace-based chat app with persistent project memory. It extracts useful facts from conversations, retrieves relevant memories for later replies, and helps resolve conflicting information.
+**Smaran.ai** is a workspace-based chat app with persistent project memory. It extracts useful facts from conversations, retrieves relevant memories for later replies, and helps resolve conflicting information
 
 ## 🧠 Features
 
